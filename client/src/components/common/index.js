@@ -11,3 +11,4 @@ export { default as Textarea } from './Textarea';
 export { default as Button } from './Button';
 export { default as Pagination } from './Pagination';
 export { default as ConfirmDialog } from './ConfirmDialog';
+export { default as RowActions } from './RowActions';

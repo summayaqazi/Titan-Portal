@@ -8,7 +8,7 @@ const studentSchema = new mongoose.Schema(
     dateOfBirth: { type: Date },
     gender: { type: String, enum: ['male', 'female', 'other'] },
     address: { type: String, trim: true },
-    city: { type: mongoose.Schema.Types.ObjectId, ref: 'City' },
+    city: { type: mongoose.Schema.Types.ObjectId, ref: 'City', index: true },
     profilePicture: { type: String },
     isActive: { type: Boolean, default: true },
   },

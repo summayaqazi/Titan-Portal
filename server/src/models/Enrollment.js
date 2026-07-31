@@ -37,5 +37,8 @@ const enrollmentSchema = new mongoose.Schema(
 );
 
 enrollmentSchema.index({ student: 1, course: 1, batch: 1 }, { unique: true });
+// Speeds up the attendance roster query (find enrolled students for a batch)
+// and batch-scoped enrollment lookups elsewhere.
+enrollmentSchema.index({ batch: 1, status: 1 });
 
 module.exports = mongoose.model('Enrollment', enrollmentSchema);

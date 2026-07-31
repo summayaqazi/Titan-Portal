@@ -3,6 +3,9 @@ import { User } from 'lucide-react';
 import { PageContainer, FormField, Input, Button } from '../../components/common';
 import { useAuth } from '../../context/AuthContext';
 import { updateProfileRequest, changePasswordRequest } from '../../api/profileApi';
+import useSubmitGuard from '../../hooks/useSubmitGuard';
+import { getErrorMessage } from '../../utils/errors';
+import { validateImageFile } from '../../utils/validateFile';
 
 function ProfileDetailsForm() {
   const { user, updateUser } = useAuth();
@@ -11,26 +14,42 @@ function ProfileDetailsForm() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const guardSubmit = useSubmitGuard();
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setError('');
-    setMessage('');
-    if (!form.name) {
-      setError('Name is required');
+    guardSubmit(async () => {
+      setError('');
+      setMessage('');
+      if (!form.name) {
+        setError('Name is required');
+        return;
+      }
+      setSubmitting(true);
+      try {
+        const updated = await updateProfileRequest({ ...form, avatarFile });
+        updateUser(updated);
+        setMessage('Profile updated successfully');
+        setAvatarFile(null);
+      } catch (err) {
+        setError(getErrorMessage(err, 'Failed to update profile'));
+      } finally {
+        setSubmitting(false);
+      }
+    });
+  };
+
+  const handleAvatarChange = (e) => {
+    const file = e.target.files?.[0] || null;
+    const validationError = validateImageFile(file);
+    if (validationError) {
+      setError(validationError);
+      e.target.value = '';
+      setAvatarFile(null);
       return;
     }
-    setSubmitting(true);
-    try {
-      const updated = await updateProfileRequest({ ...form, avatarFile });
-      updateUser(updated);
-      setMessage('Profile updated successfully');
-      setAvatarFile(null);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to update profile');
-    } finally {
-      setSubmitting(false);
-    }
+    setError('');
+    setAvatarFile(file);
   };
 
   const avatarUrl = user?.avatar ? `${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000'}${user.avatar}` : null;
@@ -48,7 +67,7 @@ function ProfileDetailsForm() {
             id="avatar"
             type="file"
             accept="image/png,image/jpeg,image/webp"
-            onChange={(e) => setAvatarFile(e.target.files?.[0] || null)}
+            onChange={handleAvatarChange}
             className="block text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-blue-600 hover:file:bg-blue-100"
           />
         </div>
@@ -82,37 +101,40 @@ function ChangePasswordForm() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const guardSubmit = useSubmitGuard();
 
   const handleChange = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }));
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setError('');
-    setMessage('');
+    guardSubmit(async () => {
+      setError('');
+      setMessage('');
 
-    if (!form.currentPassword || !form.newPassword) {
-      setError('Both current and new password are required');
-      return;
-    }
-    if (form.newPassword !== form.confirmPassword) {
-      setError('New password and confirmation do not match');
-      return;
-    }
-    if (form.newPassword.length < 6) {
-      setError('New password must be at least 6 characters');
-      return;
-    }
+      if (!form.currentPassword || !form.newPassword) {
+        setError('Both current and new password are required');
+        return;
+      }
+      if (form.newPassword !== form.confirmPassword) {
+        setError('New password and confirmation do not match');
+        return;
+      }
+      if (form.newPassword.length < 6) {
+        setError('New password must be at least 6 characters');
+        return;
+      }
 
-    setSubmitting(true);
-    try {
-      await changePasswordRequest(form.currentPassword, form.newPassword);
-      setMessage('Password updated successfully');
-      setForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to update password');
-    } finally {
-      setSubmitting(false);
-    }
+      setSubmitting(true);
+      try {
+        await changePasswordRequest(form.currentPassword, form.newPassword);
+        setMessage('Password updated successfully');
+        setForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      } catch (err) {
+        setError(getErrorMessage(err, 'Failed to update password'));
+      } finally {
+        setSubmitting(false);
+      }
+    });
   };
 
   return (

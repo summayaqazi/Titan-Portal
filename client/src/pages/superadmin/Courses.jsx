@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Search, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 import {
   PageContainer,
   Table,
@@ -10,8 +10,11 @@ import {
   ConfirmDialog,
   Drawer,
   FormField,
+  RowActions,
 } from '../../components/common';
 import useCrudResource from '../../hooks/useCrudResource';
+import useSubmitGuard from '../../hooks/useSubmitGuard';
+import { getErrorMessage } from '../../utils/errors';
 import coursesApi from '../../api/coursesApi';
 
 const emptyForm = { name: '', code: '', description: '', durationInMonths: '', fee: '', isActive: true };
@@ -20,6 +23,7 @@ function CourseFormDrawer({ open, onClose, course, onSubmit }) {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const guardSubmit = useSubmitGuard();
   const isEdit = Boolean(course);
 
   useEffect(() => {
@@ -44,22 +48,32 @@ function CourseFormDrawer({ open, onClose, course, onSubmit }) {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setError('');
-    if (!form.name || !form.code || !form.durationInMonths) {
-      setError('Name, code and duration are required');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await onSubmit({ ...form, durationInMonths: Number(form.durationInMonths), fee: Number(form.fee) || 0 });
-      onClose();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to save course');
-    } finally {
-      setSubmitting(false);
-    }
+    guardSubmit(async () => {
+      setError('');
+      if (!form.name || !form.code || !form.durationInMonths) {
+        setError('Name, code and duration are required');
+        return;
+      }
+      if (Number(form.durationInMonths) <= 0) {
+        setError('Duration must be greater than zero');
+        return;
+      }
+      if (form.fee !== '' && Number(form.fee) < 0) {
+        setError('Fee cannot be negative');
+        return;
+      }
+      setSubmitting(true);
+      try {
+        await onSubmit({ ...form, durationInMonths: Number(form.durationInMonths), fee: Number(form.fee) || 0 });
+        onClose();
+      } catch (err) {
+        setError(getErrorMessage(err, 'Failed to save course'));
+      } finally {
+        setSubmitting(false);
+      }
+    });
   };
 
   return (
@@ -114,10 +128,8 @@ function CourseFormDrawer({ open, onClose, course, onSubmit }) {
 }
 
 export default function Courses() {
-  const { items, total, totalPages, page, setPage, search, changeSearch, loading, error, refetch } = useCrudResource(
-    coursesApi.list,
-    { limit: 10 }
-  );
+  const { items, total, totalPages, page, setPage, search, changeSearch, loading, error, refetch, handleDeleted } =
+    useCrudResource(coursesApi.list, { limit: 10 });
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -140,7 +152,7 @@ export default function Courses() {
     try {
       await coursesApi.remove(deleteTarget._id);
       setDeleteTarget(null);
-      refetch();
+      handleDeleted();
     } catch (err) {
       setDeleteError(err.response?.data?.message || 'Failed to delete course');
     } finally {
@@ -166,27 +178,13 @@ export default function Courses() {
       key: 'actions',
       header: '',
       render: (row) => (
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => {
-              setEditing(row);
-              setFormOpen(true);
-            }}
-            className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600"
-            aria-label="Edit"
-          >
-            <Pencil size={15} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setDeleteTarget(row)}
-            className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-            aria-label="Delete"
-          >
-            <Trash2 size={15} />
-          </button>
-        </div>
+        <RowActions
+          onEdit={() => {
+            setEditing(row);
+            setFormOpen(true);
+          }}
+          onDelete={() => setDeleteTarget(row)}
+        />
       ),
     },
   ];

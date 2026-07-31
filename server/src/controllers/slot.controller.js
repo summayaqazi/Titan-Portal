@@ -35,6 +35,12 @@ const createSlot = asyncHandler(async (req, res) => {
     throw new Error('Label, start time and end time are required');
   }
 
+  const existing = await Slot.findOne({ label });
+  if (existing) {
+    res.status(400);
+    throw new Error('A slot with this label already exists');
+  }
+
   const slot = await Slot.create({ label, startTime, endTime, days, isActive });
   res.status(201).json({ success: true, data: slot });
 });
@@ -47,7 +53,14 @@ const updateSlot = asyncHandler(async (req, res) => {
   }
 
   const { label, startTime, endTime, days, isActive } = req.body;
-  if (label !== undefined) slot.label = label;
+  if (label !== undefined && label !== slot.label) {
+    const existing = await Slot.findOne({ label });
+    if (existing) {
+      res.status(400);
+      throw new Error('A slot with this label already exists');
+    }
+    slot.label = label;
+  }
   if (startTime !== undefined) slot.startTime = startTime;
   if (endTime !== undefined) slot.endTime = endTime;
   if (days !== undefined) slot.days = days;

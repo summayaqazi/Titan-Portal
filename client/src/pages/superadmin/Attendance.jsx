@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Trash2, Save } from 'lucide-react';
-import { PageContainer, Table, Pagination, Select, Input, Button, StatusBadge, ConfirmDialog } from '../../components/common';
+import { Save } from 'lucide-react';
+import {
+  PageContainer,
+  Table,
+  Pagination,
+  Select,
+  Input,
+  Button,
+  StatusBadge,
+  ConfirmDialog,
+  RowActions,
+} from '../../components/common';
 import useCrudResource from '../../hooks/useCrudResource';
 import attendanceApi from '../../api/attendanceApi';
 import batchesApi from '../../api/batchesApi';
@@ -116,10 +126,8 @@ function MarkAttendancePanel({ batches, onMarked }) {
 }
 
 export default function Attendance() {
-  const { items, total, totalPages, page, setPage, filters, setFilter, loading, error, refetch } = useCrudResource(
-    attendanceApi.list,
-    { limit: 10 }
-  );
+  const { items, total, totalPages, page, setPage, filters, setFilter, loading, error, refetch, handleDeleted } =
+    useCrudResource(attendanceApi.list, { limit: 10 });
 
   const [batches, setBatches] = useState([]);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -134,7 +142,7 @@ export default function Attendance() {
     try {
       await attendanceApi.remove(deleteTarget._id);
       setDeleteTarget(null);
-      refetch();
+      handleDeleted();
     } finally {
       setDeleting(false);
     }
@@ -149,16 +157,7 @@ export default function Attendance() {
     {
       key: 'actions',
       header: '',
-      render: (row) => (
-        <button
-          type="button"
-          onClick={() => setDeleteTarget(row)}
-          className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-          aria-label="Delete"
-        >
-          <Trash2 size={15} />
-        </button>
-      ),
+      render: (row) => <RowActions onDelete={() => setDeleteTarget(row)} />,
     },
   ];
 

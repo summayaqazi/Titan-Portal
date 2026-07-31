@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Search, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 import {
   PageContainer,
   Table,
@@ -11,8 +11,11 @@ import {
   ConfirmDialog,
   Drawer,
   FormField,
+  RowActions,
 } from '../../components/common';
 import useCrudResource from '../../hooks/useCrudResource';
+import useSubmitGuard from '../../hooks/useSubmitGuard';
+import { getErrorMessage } from '../../utils/errors';
 import trainersApi from '../../api/trainersApi';
 import campusesApi from '../../api/campusesApi';
 
@@ -32,6 +35,7 @@ function TrainerFormDrawer({ open, onClose, trainer, campuses, onSubmit }) {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const guardSubmit = useSubmitGuard();
   const isEdit = Boolean(trainer);
 
   useEffect(() => {
@@ -59,28 +63,30 @@ function TrainerFormDrawer({ open, onClose, trainer, campuses, onSubmit }) {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setError('');
-    if (!form.name || !form.email || !form.campus) {
-      setError('Name, email and campus are required');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await onSubmit({
-        ...form,
-        specialization: form.specialization
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean),
-      });
-      onClose();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to save trainer');
-    } finally {
-      setSubmitting(false);
-    }
+    guardSubmit(async () => {
+      setError('');
+      if (!form.name || !form.email || !form.campus) {
+        setError('Name, email and campus are required');
+        return;
+      }
+      setSubmitting(true);
+      try {
+        await onSubmit({
+          ...form,
+          specialization: form.specialization
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
+        });
+        onClose();
+      } catch (err) {
+        setError(getErrorMessage(err, 'Failed to save trainer'));
+      } finally {
+        setSubmitting(false);
+      }
+    });
   };
 
   return (
@@ -156,8 +162,21 @@ function TrainerFormDrawer({ open, onClose, trainer, campuses, onSubmit }) {
 }
 
 export default function Trainers() {
-  const { items, total, totalPages, page, setPage, search, changeSearch, filters, setFilter, loading, error, refetch } =
-    useCrudResource(trainersApi.list, { limit: 10 });
+  const {
+    items,
+    total,
+    totalPages,
+    page,
+    setPage,
+    search,
+    changeSearch,
+    filters,
+    setFilter,
+    loading,
+    error,
+    refetch,
+    handleDeleted,
+  } = useCrudResource(trainersApi.list, { limit: 10 });
 
   const [campuses, setCampuses] = useState([]);
   const [formOpen, setFormOpen] = useState(false);
@@ -185,7 +204,7 @@ export default function Trainers() {
     try {
       await trainersApi.remove(deleteTarget._id);
       setDeleteTarget(null);
-      refetch();
+      handleDeleted();
     } catch (err) {
       setDeleteError(err.response?.data?.message || 'Failed to delete trainer');
     } finally {
@@ -215,27 +234,13 @@ export default function Trainers() {
       key: 'actions',
       header: '',
       render: (row) => (
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => {
-              setEditing(row);
-              setFormOpen(true);
-            }}
-            className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600"
-            aria-label="Edit"
-          >
-            <Pencil size={15} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setDeleteTarget(row)}
-            className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-            aria-label="Delete"
-          >
-            <Trash2 size={15} />
-          </button>
-        </div>
+        <RowActions
+          onEdit={() => {
+            setEditing(row);
+            setFormOpen(true);
+          }}
+          onDelete={() => setDeleteTarget(row)}
+        />
       ),
     },
   ];

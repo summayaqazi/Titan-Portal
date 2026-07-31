@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import {
   PageContainer,
   Table,
@@ -11,8 +11,11 @@ import {
   ConfirmDialog,
   Drawer,
   FormField,
+  RowActions,
 } from '../../components/common';
 import useCrudResource from '../../hooks/useCrudResource';
+import useSubmitGuard from '../../hooks/useSubmitGuard';
+import { getErrorMessage } from '../../utils/errors';
 import batchesApi from '../../api/batchesApi';
 import coursesApi from '../../api/coursesApi';
 import campusesApi from '../../api/campusesApi';
@@ -38,6 +41,7 @@ function BatchFormDrawer({ open, onClose, batch, courses, campuses, trainers, sl
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const guardSubmit = useSubmitGuard();
   const isEdit = Boolean(batch);
 
   useEffect(() => {
@@ -66,22 +70,32 @@ function BatchFormDrawer({ open, onClose, batch, courses, campuses, trainers, sl
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setError('');
-    if (!form.batchCode || !form.course || !form.campus || !form.startDate) {
-      setError('Batch code, course, campus and start date are required');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await onSubmit({ ...form, capacity: Number(form.capacity) || 30 });
-      onClose();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to save batch');
-    } finally {
-      setSubmitting(false);
-    }
+    guardSubmit(async () => {
+      setError('');
+      if (!form.batchCode || !form.course || !form.campus || !form.startDate) {
+        setError('Batch code, course, campus and start date are required');
+        return;
+      }
+      if (Number(form.capacity) <= 0) {
+        setError('Capacity must be greater than zero');
+        return;
+      }
+      if (form.endDate && form.endDate < form.startDate) {
+        setError('End date cannot be before the start date');
+        return;
+      }
+      setSubmitting(true);
+      try {
+        await onSubmit({ ...form, capacity: Number(form.capacity) || 30 });
+        onClose();
+      } catch (err) {
+        setError(getErrorMessage(err, 'Failed to save batch'));
+      } finally {
+        setSubmitting(false);
+      }
+    });
   };
 
   return (
@@ -180,10 +194,8 @@ function BatchFormDrawer({ open, onClose, batch, courses, campuses, trainers, sl
 }
 
 export default function Batches() {
-  const { items, total, totalPages, page, setPage, filters, setFilter, loading, error, refetch } = useCrudResource(
-    batchesApi.list,
-    { limit: 10 }
-  );
+  const { items, total, totalPages, page, setPage, filters, setFilter, loading, error, refetch, handleDeleted } =
+    useCrudResource(batchesApi.list, { limit: 10 });
 
   const [courses, setCourses] = useState([]);
   const [campuses, setCampuses] = useState([]);
@@ -218,7 +230,7 @@ export default function Batches() {
     try {
       await batchesApi.remove(deleteTarget._id);
       setDeleteTarget(null);
-      refetch();
+      handleDeleted();
     } catch (err) {
       setDeleteError(err.response?.data?.message || 'Failed to delete batch');
     } finally {
@@ -250,27 +262,13 @@ export default function Batches() {
       key: 'actions',
       header: '',
       render: (row) => (
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => {
-              setEditing(row);
-              setFormOpen(true);
-            }}
-            className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600"
-            aria-label="Edit"
-          >
-            <Pencil size={15} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setDeleteTarget(row)}
-            className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-            aria-label="Delete"
-          >
-            <Trash2 size={15} />
-          </button>
-        </div>
+        <RowActions
+          onEdit={() => {
+            setEditing(row);
+            setFormOpen(true);
+          }}
+          onDelete={() => setDeleteTarget(row)}
+        />
       ),
     },
   ];

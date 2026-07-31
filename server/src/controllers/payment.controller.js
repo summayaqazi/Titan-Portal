@@ -43,6 +43,10 @@ const createPayment = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error('Enrollment and amount are required');
   }
+  if (amount <= 0) {
+    res.status(400);
+    throw new Error('Amount must be greater than zero');
+  }
 
   const enrollmentDoc = await Enrollment.findById(enrollment);
   if (!enrollmentDoc) {
@@ -75,7 +79,13 @@ const updatePayment = asyncHandler(async (req, res) => {
 
   const { amount, method, installmentNumber, status, dueDate, paidDate, remarks } = req.body;
 
-  if (amount !== undefined) payment.amount = amount;
+  if (amount !== undefined) {
+    if (amount <= 0) {
+      res.status(400);
+      throw new Error('Amount must be greater than zero');
+    }
+    payment.amount = amount;
+  }
   if (method !== undefined) payment.method = method;
   if (installmentNumber !== undefined) payment.installmentNumber = installmentNumber;
   if (dueDate !== undefined) payment.dueDate = dueDate;

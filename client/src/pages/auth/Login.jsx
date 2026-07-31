@@ -84,6 +84,7 @@ function defaultRouteForRole(role) {
     case 'SUPER_ADMIN':
       return '/super-admin/dashboard';
     default:
-      return '/login';
+      // Other roles authenticate successfully but have no portal built yet.
+      return '/unauthorized';
   }
 }

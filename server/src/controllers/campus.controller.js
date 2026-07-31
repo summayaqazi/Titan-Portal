@@ -43,6 +43,12 @@ const createCampus = asyncHandler(async (req, res) => {
     throw new Error('Selected city does not exist');
   }
 
+  const existing = await Campus.findOne({ name });
+  if (existing) {
+    res.status(400);
+    throw new Error('A campus with this name already exists');
+  }
+
   const campus = await Campus.create({ name, city, address, contactNumber, isActive });
   res.status(201).json({ success: true, data: await campus.populate('city', 'name') });
 });
@@ -64,7 +70,14 @@ const updateCampus = asyncHandler(async (req, res) => {
     }
     campus.city = city;
   }
-  if (name !== undefined) campus.name = name;
+  if (name !== undefined && name !== campus.name) {
+    const existing = await Campus.findOne({ name });
+    if (existing) {
+      res.status(400);
+      throw new Error('A campus with this name already exists');
+    }
+    campus.name = name;
+  }
   if (address !== undefined) campus.address = address;
   if (contactNumber !== undefined) campus.contactNumber = contactNumber;
   if (isActive !== undefined) campus.isActive = isActive;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Search, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 import {
   PageContainer,
   Table,
@@ -11,8 +11,11 @@ import {
   ConfirmDialog,
   Drawer,
   FormField,
+  RowActions,
 } from '../../components/common';
 import useCrudResource from '../../hooks/useCrudResource';
+import useSubmitGuard from '../../hooks/useSubmitGuard';
+import { getErrorMessage } from '../../utils/errors';
 import adminUsersApi from '../../api/adminUsersApi';
 import { useAuth } from '../../context/AuthContext';
 
@@ -23,6 +26,7 @@ function AdminUserFormDrawer({ open, onClose, user, onSubmit }) {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const guardSubmit = useSubmitGuard();
   const isEdit = Boolean(user);
 
   useEffect(() => {
@@ -40,22 +44,24 @@ function AdminUserFormDrawer({ open, onClose, user, onSubmit }) {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setError('');
-    if (!form.name || !form.email) {
-      setError('Name and email are required');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await onSubmit(form);
-      onClose();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to save admin user');
-    } finally {
-      setSubmitting(false);
-    }
+    guardSubmit(async () => {
+      setError('');
+      if (!form.name || !form.email) {
+        setError('Name and email are required');
+        return;
+      }
+      setSubmitting(true);
+      try {
+        await onSubmit(form);
+        onClose();
+      } catch (err) {
+        setError(getErrorMessage(err, 'Failed to save admin user'));
+      } finally {
+        setSubmitting(false);
+      }
+    });
   };
 
   return (
@@ -114,8 +120,21 @@ function AdminUserFormDrawer({ open, onClose, user, onSubmit }) {
 
 export default function AdminUsers() {
   const { user: currentUser } = useAuth();
-  const { items, total, totalPages, page, setPage, search, changeSearch, filters, setFilter, loading, error, refetch } =
-    useCrudResource(adminUsersApi.list, { limit: 10 });
+  const {
+    items,
+    total,
+    totalPages,
+    page,
+    setPage,
+    search,
+    changeSearch,
+    filters,
+    setFilter,
+    loading,
+    error,
+    refetch,
+    handleDeleted,
+  } = useCrudResource(adminUsersApi.list, { limit: 10 });
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -138,7 +157,7 @@ export default function AdminUsers() {
     try {
       await adminUsersApi.remove(deleteTarget._id);
       setDeleteTarget(null);
-      refetch();
+      handleDeleted();
     } catch (err) {
       setDeleteError(err.response?.data?.message || 'Failed to delete admin user');
     } finally {
@@ -166,28 +185,15 @@ export default function AdminUsers() {
       key: 'actions',
       header: '',
       render: (row) => (
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => {
-              setEditing(row);
-              setFormOpen(true);
-            }}
-            className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600"
-            aria-label="Edit"
-          >
-            <Pencil size={15} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setDeleteTarget(row)}
-            disabled={row._id === currentUser?.id}
-            className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30"
-            aria-label="Delete"
-          >
-            <Trash2 size={15} />
-          </button>
-        </div>
+        <RowActions
+          onEdit={() => {
+            setEditing(row);
+            setFormOpen(true);
+          }}
+          onDelete={() => setDeleteTarget(row)}
+          deleteDisabled={row._id === currentUser?.id}
+          deleteTitle="You cannot delete your own account"
+        />
       ),
     },
   ];

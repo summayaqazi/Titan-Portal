@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Plus, Search, Pencil, Trash2, Eye } from 'lucide-react';
-import { PageContainer, Table, Pagination, Select, Input, Button, StatusBadge, ConfirmDialog } from '../../components/common';
+import { Plus, Search } from 'lucide-react';
+import {
+  PageContainer,
+  Table,
+  Pagination,
+  Select,
+  Input,
+  Button,
+  StatusBadge,
+  ConfirmDialog,
+  RowActions,
+} from '../../components/common';
 import StudentFormDrawer from '../../components/students/StudentFormDrawer';
 import StudentDetailDrawer from '../../components/students/StudentDetailDrawer';
 import useCrudResource from '../../hooks/useCrudResource';
@@ -9,8 +19,21 @@ import citiesApi from '../../api/citiesApi';
 import batchesApi from '../../api/batchesApi';
 
 export default function Students() {
-  const { items, total, totalPages, page, setPage, search, changeSearch, filters, setFilter, loading, error, refetch } =
-    useCrudResource(studentsApi.list, { limit: 10 });
+  const {
+    items,
+    total,
+    totalPages,
+    page,
+    setPage,
+    search,
+    changeSearch,
+    filters,
+    setFilter,
+    loading,
+    error,
+    refetch,
+    handleDeleted,
+  } = useCrudResource(studentsApi.list, { limit: 10 });
 
   const [cities, setCities] = useState([]);
   const [batches, setBatches] = useState([]);
@@ -52,7 +75,7 @@ export default function Students() {
     try {
       await studentsApi.remove(deleteTarget._id);
       setDeleteTarget(null);
-      refetch();
+      handleDeleted();
     } catch (err) {
       setDeleteError(err.response?.data?.message || 'Failed to delete student');
     } finally {
@@ -78,32 +101,11 @@ export default function Students() {
       key: 'actions',
       header: '',
       render: (row) => (
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setDetailStudent(row)}
-            className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600"
-            aria-label="View"
-          >
-            <Eye size={15} />
-          </button>
-          <button
-            type="button"
-            onClick={() => openEdit(row)}
-            className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600"
-            aria-label="Edit"
-          >
-            <Pencil size={15} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setDeleteTarget(row)}
-            className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-            aria-label="Delete"
-          >
-            <Trash2 size={15} />
-          </button>
-        </div>
+        <RowActions
+          onView={() => setDetailStudent(row)}
+          onEdit={() => openEdit(row)}
+          onDelete={() => setDeleteTarget(row)}
+        />
       ),
     },
   ];

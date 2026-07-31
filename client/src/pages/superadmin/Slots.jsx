@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import {
   PageContainer,
   Table,
@@ -10,8 +10,11 @@ import {
   ConfirmDialog,
   Drawer,
   FormField,
+  RowActions,
 } from '../../components/common';
 import useCrudResource from '../../hooks/useCrudResource';
+import useSubmitGuard from '../../hooks/useSubmitGuard';
+import { getErrorMessage } from '../../utils/errors';
 import slotsApi from '../../api/slotsApi';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -21,6 +24,7 @@ function SlotFormDrawer({ open, onClose, slot, onSubmit }) {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const guardSubmit = useSubmitGuard();
   const isEdit = Boolean(slot);
 
   useEffect(() => {
@@ -45,22 +49,24 @@ function SlotFormDrawer({ open, onClose, slot, onSubmit }) {
     }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setError('');
-    if (!form.label || !form.startTime || !form.endTime) {
-      setError('Label, start time and end time are required');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await onSubmit(form);
-      onClose();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to save slot');
-    } finally {
-      setSubmitting(false);
-    }
+    guardSubmit(async () => {
+      setError('');
+      if (!form.label || !form.startTime || !form.endTime) {
+        setError('Label, start time and end time are required');
+        return;
+      }
+      setSubmitting(true);
+      try {
+        await onSubmit(form);
+        onClose();
+      } catch (err) {
+        setError(getErrorMessage(err, 'Failed to save slot'));
+      } finally {
+        setSubmitting(false);
+      }
+    });
   };
 
   return (
@@ -120,9 +126,10 @@ function SlotFormDrawer({ open, onClose, slot, onSubmit }) {
 }
 
 export default function Slots() {
-  const { items, total, totalPages, page, setPage, loading, error, refetch } = useCrudResource(slotsApi.list, {
-    limit: 10,
-  });
+  const { items, total, totalPages, page, setPage, loading, error, refetch, handleDeleted } = useCrudResource(
+    slotsApi.list,
+    { limit: 10 }
+  );
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -145,7 +152,7 @@ export default function Slots() {
     try {
       await slotsApi.remove(deleteTarget._id);
       setDeleteTarget(null);
-      refetch();
+      handleDeleted();
     } catch (err) {
       setDeleteError(err.response?.data?.message || 'Failed to delete slot');
     } finally {
@@ -162,27 +169,13 @@ export default function Slots() {
       key: 'actions',
       header: '',
       render: (row) => (
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => {
-              setEditing(row);
-              setFormOpen(true);
-            }}
-            className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600"
-            aria-label="Edit"
-          >
-            <Pencil size={15} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setDeleteTarget(row)}
-            className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-            aria-label="Delete"
-          >
-            <Trash2 size={15} />
-          </button>
-        </div>
+        <RowActions
+          onEdit={() => {
+            setEditing(row);
+            setFormOpen(true);
+          }}
+          onDelete={() => setDeleteTarget(row)}
+        />
       ),
     },
   ];

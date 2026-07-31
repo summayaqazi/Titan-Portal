@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Drawer, FormField, Input, Select, Textarea, Button } from '../common';
+import useSubmitGuard from '../../hooks/useSubmitGuard';
+import { getErrorMessage } from '../../utils/errors';
+import { validateImageFile } from '../../utils/validateFile';
 
 const emptyForm = {
   name: '',
@@ -19,6 +22,7 @@ export default function StudentFormDrawer({ open, onClose, student, cities, onSu
   const [profilePictureFile, setProfilePictureFile] = useState(null);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const guardSubmit = useSubmitGuard();
 
   const isEdit = Boolean(student);
 
@@ -49,24 +53,39 @@ export default function StudentFormDrawer({ open, onClose, student, cities, onSu
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setError('');
+    guardSubmit(async () => {
+      setError('');
 
-    if (!form.name || !form.email) {
-      setError('Name and email are required');
+      if (!form.name || !form.email) {
+        setError('Name and email are required');
+        return;
+      }
+
+      setSubmitting(true);
+      try {
+        await onSubmit({ ...form, profilePictureFile });
+        onClose();
+      } catch (err) {
+        setError(getErrorMessage(err, 'Failed to save student'));
+      } finally {
+        setSubmitting(false);
+      }
+    });
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0] || null;
+    const validationError = validateImageFile(file);
+    if (validationError) {
+      setError(validationError);
+      e.target.value = '';
+      setProfilePictureFile(null);
       return;
     }
-
-    setSubmitting(true);
-    try {
-      await onSubmit({ ...form, profilePictureFile });
-      onClose();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to save student');
-    } finally {
-      setSubmitting(false);
-    }
+    setError('');
+    setProfilePictureFile(file);
   };
 
   return (
@@ -130,7 +149,7 @@ export default function StudentFormDrawer({ open, onClose, student, cities, onSu
             id="profilePicture"
             type="file"
             accept="image/png,image/jpeg,image/webp"
-            onChange={(e) => setProfilePictureFile(e.target.files?.[0] || null)}
+            onChange={handleFileChange}
             className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-blue-600 hover:file:bg-blue-100"
           />
         </FormField>

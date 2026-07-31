@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Search, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 import {
   PageContainer,
   Table,
@@ -11,11 +11,13 @@ import {
   ConfirmDialog,
   Drawer,
   FormField,
+  RowActions,
 } from '../../components/common';
 import useCrudResource from '../../hooks/useCrudResource';
+import useSubmitGuard from '../../hooks/useSubmitGuard';
+import { getErrorMessage } from '../../utils/errors';
 import paymentsApi from '../../api/paymentsApi';
-import studentsApi from '../../api/studentsApi';
-import { enrollmentsApi } from '../../api/studentsApi';
+import studentsApi, { enrollmentsApi } from '../../api/studentsApi';
 
 const METHODS = ['cash', 'bank_transfer', 'card', 'online', 'other'];
 const STATUSES = ['pending', 'paid', 'overdue', 'refunded'];
@@ -35,6 +37,7 @@ function PaymentFormDrawer({ open, onClose, payment, students, onSubmit }) {
   });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const guardSubmit = useSubmitGuard();
 
   useEffect(() => {
     if (!open) return;
@@ -66,26 +69,28 @@ function PaymentFormDrawer({ open, onClose, payment, students, onSubmit }) {
 
   const handleChange = (field) => (e) => setForm((prev) => ({ ...prev, [field]: e.target.value }));
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setError('');
-    if (!isEdit && (!studentId || !form.enrollment)) {
-      setError('Student and enrollment are required');
-      return;
-    }
-    if (!form.amount) {
-      setError('Amount is required');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await onSubmit({ ...form, amount: Number(form.amount), installmentNumber: Number(form.installmentNumber) || 1 });
-      onClose();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to save payment');
-    } finally {
-      setSubmitting(false);
-    }
+    guardSubmit(async () => {
+      setError('');
+      if (!isEdit && (!studentId || !form.enrollment)) {
+        setError('Student and enrollment are required');
+        return;
+      }
+      if (!form.amount || Number(form.amount) <= 0) {
+        setError('Amount must be greater than zero');
+        return;
+      }
+      setSubmitting(true);
+      try {
+        await onSubmit({ ...form, amount: Number(form.amount), installmentNumber: Number(form.installmentNumber) || 1 });
+        onClose();
+      } catch (err) {
+        setError(getErrorMessage(err, 'Failed to save payment'));
+      } finally {
+        setSubmitting(false);
+      }
+    });
   };
 
   return (
@@ -166,8 +171,21 @@ function PaymentFormDrawer({ open, onClose, payment, students, onSubmit }) {
 }
 
 export default function Payments() {
-  const { items, total, totalPages, page, setPage, search, changeSearch, filters, setFilter, loading, error, refetch } =
-    useCrudResource(paymentsApi.list, { limit: 10 });
+  const {
+    items,
+    total,
+    totalPages,
+    page,
+    setPage,
+    search,
+    changeSearch,
+    filters,
+    setFilter,
+    loading,
+    error,
+    refetch,
+    handleDeleted,
+  } = useCrudResource(paymentsApi.list, { limit: 10 });
 
   const [students, setStudents] = useState([]);
   const [formOpen, setFormOpen] = useState(false);
@@ -193,7 +211,7 @@ export default function Payments() {
     try {
       await paymentsApi.remove(deleteTarget._id);
       setDeleteTarget(null);
-      refetch();
+      handleDeleted();
     } finally {
       setDeleting(false);
     }
@@ -221,27 +239,13 @@ export default function Payments() {
       key: 'actions',
       header: '',
       render: (row) => (
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => {
-              setEditing(row);
-              setFormOpen(true);
-            }}
-            className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600"
-            aria-label="Edit"
-          >
-            <Pencil size={15} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setDeleteTarget(row)}
-            className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
-            aria-label="Delete"
-          >
-            <Trash2 size={15} />
-          </button>
-        </div>
+        <RowActions
+          onEdit={() => {
+            setEditing(row);
+            setFormOpen(true);
+          }}
+          onDelete={() => setDeleteTarget(row)}
+        />
       ),
     },
   ];

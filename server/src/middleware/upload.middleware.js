@@ -18,7 +18,9 @@ const fileFilter = (req, file, cb) => {
   if (isValid) {
     cb(null, true);
   } else {
-    cb(new Error('Only image files (jpeg, jpg, png, webp) are allowed'));
+    const error = new Error('Only image files (jpeg, jpg, png, webp) are allowed');
+    error.statusCode = 400;
+    cb(error);
   }
 };
 
