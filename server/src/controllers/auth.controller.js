@@ -1,4 +1,6 @@
 const asyncHandler = require('express-async-handler');
+const fs = require('fs');
+const path = require('path');
 const User = require('../models/User');
 const generateToken = require('../utils/generateToken');
 
@@ -50,4 +52,63 @@ const getMe = asyncHandler(async (req, res) => {
   res.json({ success: true, user: req.user });
 });
 
-module.exports = { login, getMe };
+// @desc    Update current logged-in user's profile
+// @route   PUT /api/auth/profile
+// @access  Private
+const updateProfile = asyncHandler(async (req, res) => {
+  const { name, phone } = req.body;
+  const user = req.user;
+
+  if (name !== undefined) user.name = name;
+  if (phone !== undefined) user.phone = phone;
+  if (req.file) {
+    if (user.avatar) {
+      const oldPath = path.join(__dirname, '..', user.avatar.replace('/uploads/', 'uploads/'));
+      fs.unlink(oldPath, () => {});
+    }
+    user.avatar = `/uploads/${req.file.filename}`;
+  }
+
+  await user.save();
+
+  res.json({
+    success: true,
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      phone: user.phone,
+      avatar: user.avatar,
+    },
+  });
+});
+
+// @desc    Change current logged-in user's password
+// @route   PUT /api/auth/password
+// @access  Private
+const changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword || !newPassword) {
+    res.status(400);
+    throw new Error('Current password and new password are required');
+  }
+  if (newPassword.length < 6) {
+    res.status(400);
+    throw new Error('New password must be at least 6 characters');
+  }
+
+  const user = await User.findById(req.user._id).select('+password');
+  if (!(await user.comparePassword(currentPassword))) {
+    res.status(400);
+    throw new Error('Current password is incorrect');
+  }
+
+  user.password = newPassword;
+  await user.save();
+
+  res.json({ success: true, message: 'Password updated successfully' });
+});
+
+module.exports = { login, getMe, updateProfile, changePassword };
