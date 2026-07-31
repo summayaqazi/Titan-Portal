@@ -15,6 +15,8 @@ const batchSchema = new mongoose.Schema(
       enum: ['upcoming', 'ongoing', 'completed', 'cancelled'],
       default: 'upcoming',
     },
+    // Whether this batch is currently accepting new student registrations.
+    registrationOpen: { type: Boolean, default: true },
   },
   { timestamps: true }
 );
