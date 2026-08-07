@@ -12,15 +12,18 @@ import {
   Drawer,
   FormField,
   RowActions,
+  Avatar,
 } from '../../components/common';
 import useCrudResource from '../../hooks/useCrudResource';
 import useSubmitGuard from '../../hooks/useSubmitGuard';
 import { getErrorMessage } from '../../utils/errors';
+import { resolveFileUrl } from '../../utils/fileUrl';
 import batchesApi from '../../api/batchesApi';
 import coursesApi from '../../api/coursesApi';
 import campusesApi from '../../api/campusesApi';
 import trainersApi from '../../api/trainersApi';
 import slotsApi from '../../api/slotsApi';
+import { useAuth } from '../../context/AuthContext';
 
 const BATCH_STATUSES = ['upcoming', 'ongoing', 'completed', 'cancelled'];
 
@@ -194,6 +197,10 @@ function BatchFormDrawer({ open, onClose, batch, courses, campuses, trainers, sl
 }
 
 export default function Batches() {
+  const { can } = useAuth();
+  const canCreate = can('batches', 'create');
+  const canUpdate = can('batches', 'update');
+  const canDelete = can('batches', 'delete');
   const { items, total, totalPages, page, setPage, filters, setFilter, loading, error, refetch, handleDeleted } =
     useCrudResource(batchesApi.list, { limit: 10 });
 
@@ -250,7 +257,19 @@ export default function Batches() {
       ),
     },
     { key: 'campus', header: 'Campus', render: (row) => row.campus?.name || '—' },
-    { key: 'trainer', header: 'Trainer', render: (row) => row.trainer?.user?.name || '—' },
+    {
+      key: 'trainer',
+      header: 'Trainer',
+      render: (row) =>
+        row.trainer?.user?.name ? (
+          <div className="flex items-center gap-2">
+            <Avatar src={resolveFileUrl(row.trainer.profileImage)} name={row.trainer.user.name} size={26} />
+            <span>{row.trainer.user.name}</span>
+          </div>
+        ) : (
+          '—'
+        ),
+    },
     { key: 'slot', header: 'Slot', render: (row) => row.slot?.label || '—' },
     { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} /> },
     {
@@ -263,11 +282,11 @@ export default function Batches() {
       header: '',
       render: (row) => (
         <RowActions
-          onEdit={() => {
+          onEdit={canUpdate ? () => {
             setEditing(row);
             setFormOpen(true);
-          }}
-          onDelete={() => setDeleteTarget(row)}
+          } : undefined}
+          onDelete={canDelete ? () => setDeleteTarget(row) : undefined}
         />
       ),
     },
@@ -278,14 +297,16 @@ export default function Batches() {
       title="Batches"
       description="Manage course batches across campuses"
       actions={
-        <Button
-          onClick={() => {
-            setEditing(null);
-            setFormOpen(true);
-          }}
-        >
-          <Plus size={16} /> Add Batch
-        </Button>
+        canCreate && (
+          <Button
+            onClick={() => {
+              setEditing(null);
+              setFormOpen(true);
+            }}
+          >
+            <Plus size={16} /> Add Batch
+          </Button>
+        )
       }
     >
       <div className="mb-4 flex flex-wrap items-center gap-3">

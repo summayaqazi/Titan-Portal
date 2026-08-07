@@ -1,11 +1,17 @@
 const express = require('express');
-const { updateEnrollment, deleteEnrollment } = require('../controllers/enrollment.controller');
-const { protect, authorize } = require('../middleware/auth.middleware');
+const { updateEnrollment, bulkUpdateStatus, deleteEnrollment } = require('../controllers/enrollment.controller');
+const { protect, authorize, checkPermission } = require('../middleware/auth.middleware');
 const { ROLES } = require('../utils/constants');
 
 const router = express.Router();
-router.use(protect, authorize(ROLES.SUPER_ADMIN));
+router.use(protect, authorize(ROLES.SUPER_ADMIN, ROLES.ADMIN));
 
-router.route('/:id').put(updateEnrollment).delete(deleteEnrollment);
+// Fixed-path route registered before the /:id routes below.
+router.post('/bulk-status', checkPermission('updation', 'update'), bulkUpdateStatus);
+
+router
+  .route('/:id')
+  .put(checkPermission('students', 'update'), updateEnrollment)
+  .delete(checkPermission('students', 'delete'), deleteEnrollment);
 
 module.exports = router;

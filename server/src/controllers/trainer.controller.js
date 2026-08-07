@@ -1,32 +1,47 @@
 const asyncHandler = require('express-async-handler');
+const fs = require('fs');
+const path = require('path');
 const Trainer = require('../models/Trainer');
 const User = require('../models/User');
 const Campus = require('../models/Campus');
+const Course = require('../models/Course');
 const Batch = require('../models/Batch');
 const Enrollment = require('../models/Enrollment');
 const { ROLES } = require('../utils/constants');
 const { parseListQuery, paginatedResponse } = require('../utils/queryHelpers');
+const { requireAdminCampusScope } = require('../utils/campusScope');
 
 const POPULATE = [
   { path: 'user', select: 'name email phone avatar isActive' },
-  { path: 'campus', select: 'name' },
+  { path: 'campuses', select: 'name' },
+  { path: 'courses', select: 'name code' },
 ];
+
+const toArray = (value) => {
+  if (value === undefined) return undefined;
+  if (Array.isArray(value)) return value.filter(Boolean);
+  return value ? [value] : [];
+};
 
 const getTrainers = asyncHandler(async (req, res) => {
   const { page, limit, search, skip } = parseListQuery(req);
 
   const filter = {};
-  if (req.query.campus) filter.campus = req.query.campus;
+  if (req.query.campus) filter.campuses = req.query.campus;
+  if (req.query.course) filter.courses = req.query.course;
   if (req.query.isActive !== undefined) filter.isActive = req.query.isActive === 'true';
+  // ADMIN must never see another campus's trainers, even if this page's
+  // own (pre-existing, Super-Admin-facing) campus filter above was left
+  // unset or tampered with.
+  const campusScope = requireAdminCampusScope(req);
+  if (campusScope) filter.campuses = campusScope;
 
-  let userIdFilter;
   if (search) {
     const matchingUsers = await User.find({
       role: ROLES.TRAINER,
       name: { $regex: search, $options: 'i' },
     }).select('_id');
-    userIdFilter = matchingUsers.map((u) => u._id);
-    filter.user = { $in: userIdFilter };
+    filter.user = { $in: matchingUsers.map((u) => u._id) };
   }
 
   const [items, total] = await Promise.all([
@@ -46,18 +61,47 @@ const getTrainer = asyncHandler(async (req, res) => {
   res.json({ success: true, data: trainer });
 });
 
-const createTrainer = asyncHandler(async (req, res) => {
-  const { name, email, password, phone, campus, specialization, qualification, cnic, joiningDate } = req.body;
+const validateCampusesAndCourses = async (campuses, courses) => {
+  if (campuses?.length) {
+    const count = await Campus.countDocuments({ _id: { $in: campuses } });
+    if (count !== campuses.length) {
+      const error = new Error('One or more selected campuses do not exist');
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+  if (courses?.length) {
+    const count = await Course.countDocuments({ _id: { $in: courses } });
+    if (count !== courses.length) {
+      const error = new Error('One or more selected courses do not exist');
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+};
 
-  if (!name || !email || !campus) {
+const createTrainer = asyncHandler(async (req, res) => {
+  const { name, email, password, phone, qualification, cnic, joiningDate, bio, hourlyRate } = req.body;
+  const campuses = toArray(req.body.campuses ?? req.body.campus) || [];
+  const specialization = toArray(req.body.specialization) || [];
+  const courses = toArray(req.body.courses) || [];
+  const socialLinks = {
+    linkedin: req.body['socialLinks[linkedin]'] ?? req.body.socialLinks?.linkedin,
+    twitter: req.body['socialLinks[twitter]'] ?? req.body.socialLinks?.twitter,
+    facebook: req.body['socialLinks[facebook]'] ?? req.body.socialLinks?.facebook,
+    website: req.body['socialLinks[website]'] ?? req.body.socialLinks?.website,
+  };
+
+  if (!name || !email || campuses.length === 0) {
     res.status(400);
-    throw new Error('Name, email and campus are required');
+    throw new Error('Name, email and at least one campus are required');
   }
 
-  const campusExists = await Campus.findById(campus);
-  if (!campusExists) {
-    res.status(400);
-    throw new Error('Selected campus does not exist');
+  try {
+    await validateCampusesAndCourses(campuses, courses);
+  } catch (err) {
+    res.status(err.statusCode || 400);
+    throw err;
   }
 
   const existingUser = await User.findOne({ email });
@@ -76,11 +120,16 @@ const createTrainer = asyncHandler(async (req, res) => {
 
   const trainer = await Trainer.create({
     user: user._id,
-    campus,
-    specialization: Array.isArray(specialization) ? specialization : specialization ? [specialization] : [],
+    campuses,
+    specialization,
     qualification,
     cnic,
     joiningDate,
+    bio,
+    hourlyRate: hourlyRate || undefined,
+    socialLinks,
+    courses,
+    profileImage: req.file ? `/uploads/${req.file.filename}` : undefined,
   });
 
   res.status(201).json({ success: true, data: await trainer.populate(POPULATE) });
@@ -93,8 +142,14 @@ const updateTrainer = asyncHandler(async (req, res) => {
     throw new Error('Trainer not found');
   }
 
-  const { name, email, phone, isActive: userActive, campus, specialization, qualification, cnic, joiningDate, isActive } =
+  const { name, email, phone, isActive: userActive, qualification, cnic, joiningDate, isActive, bio, hourlyRate } =
     req.body;
+  const campuses = toArray(req.body.campuses ?? req.body.campus);
+  const specialization = toArray(req.body.specialization);
+  const courses = toArray(req.body.courses);
+  const hasSocialLinks =
+    req.body.socialLinks !== undefined ||
+    ['linkedin', 'twitter', 'facebook', 'website'].some((k) => req.body[`socialLinks[${k}]`] !== undefined);
 
   const user = await User.findById(trainer.user);
   if (name !== undefined) user.name = name;
@@ -110,21 +165,45 @@ const updateTrainer = asyncHandler(async (req, res) => {
   }
   await user.save();
 
-  if (campus !== undefined) {
-    const campusExists = await Campus.findById(campus);
-    if (!campusExists) {
+  if (campuses !== undefined) {
+    if (campuses.length === 0) {
       res.status(400);
-      throw new Error('Selected campus does not exist');
+      throw new Error('At least one campus is required');
     }
-    trainer.campus = campus;
+    await validateCampusesAndCourses(campuses, courses).catch((err) => {
+      res.status(err.statusCode || 400);
+      throw err;
+    });
+    trainer.campuses = campuses;
   }
-  if (specialization !== undefined) {
-    trainer.specialization = Array.isArray(specialization) ? specialization : [specialization];
-  }
+  if (courses !== undefined) trainer.courses = courses;
+  if (specialization !== undefined) trainer.specialization = specialization;
   if (qualification !== undefined) trainer.qualification = qualification;
   if (cnic !== undefined) trainer.cnic = cnic;
   if (joiningDate !== undefined) trainer.joiningDate = joiningDate;
   if (isActive !== undefined) trainer.isActive = isActive;
+  if (bio !== undefined) trainer.bio = bio;
+  if (hourlyRate !== undefined) trainer.hourlyRate = hourlyRate || undefined;
+  if (hasSocialLinks) {
+    trainer.socialLinks = {
+      linkedin: req.body['socialLinks[linkedin]'] ?? req.body.socialLinks?.linkedin ?? trainer.socialLinks?.linkedin,
+      twitter: req.body['socialLinks[twitter]'] ?? req.body.socialLinks?.twitter ?? trainer.socialLinks?.twitter,
+      facebook: req.body['socialLinks[facebook]'] ?? req.body.socialLinks?.facebook ?? trainer.socialLinks?.facebook,
+      website: req.body['socialLinks[website]'] ?? req.body.socialLinks?.website ?? trainer.socialLinks?.website,
+    };
+  }
+
+  if (req.file) {
+    if (trainer.profileImage) {
+      const oldPath = path.join(__dirname, '..', trainer.profileImage.replace('/uploads/', 'uploads/'));
+      fs.unlink(oldPath, () => {});
+    }
+    trainer.profileImage = `/uploads/${req.file.filename}`;
+  } else if (req.body.removeProfileImage === 'true' && trainer.profileImage) {
+    const oldPath = path.join(__dirname, '..', trainer.profileImage.replace('/uploads/', 'uploads/'));
+    fs.unlink(oldPath, () => {});
+    trainer.profileImage = undefined;
+  }
 
   await trainer.save();
   res.json({ success: true, data: await trainer.populate(POPULATE) });

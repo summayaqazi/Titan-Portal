@@ -1,132 +1,341 @@
-import { useEffect, useState } from 'react';
-import { Check, Minus, ShieldCheck, UserCog, GraduationCap, User } from 'lucide-react';
-import { PageContainer } from '../../components/common';
-import axiosInstance from '../../api/axiosInstance';
+import { useEffect, useMemo, useState } from 'react';
+import { Check, KeyRound, Lock, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { PageContainer, Modal, FormField, Input, Textarea, Button, ConfirmDialog } from '../../components/common';
+import rolesApi from '../../api/rolesApi';
+import { PERMISSION_MODULES, PERMISSION_ACTIONS, MODULE_LABELS } from '../../constants/permissions';
+import { getErrorMessage } from '../../utils/errors';
+import useSubmitGuard from '../../hooks/useSubmitGuard';
+import { useAuth } from '../../context/AuthContext';
 
-const ROLE_META = {
-  SUPER_ADMIN: {
-    label: 'Super Admin',
-    description: 'Full access to every module across the institute.',
-    icon: ShieldCheck,
-    color: 'bg-blue-50 text-blue-600',
-  },
-  ADMIN: {
-    label: 'Admin',
-    description: 'Campus-level administration (Admin portal not yet built).',
-    icon: UserCog,
-    color: 'bg-amber-50 text-amber-600',
-  },
-  TRAINER: {
-    label: 'Trainer',
-    description: 'Manages assigned batches and attendance (Trainer portal not yet built).',
-    icon: GraduationCap,
-    color: 'bg-purple-50 text-purple-600',
-  },
-  STUDENT: {
-    label: 'Student',
-    description: 'Views enrollments, attendance and payments (Student portal not yet built).',
-    icon: User,
-    color: 'bg-slate-100 text-slate-600',
-  },
-};
+const emptyMatrix = () =>
+  PERMISSION_MODULES.map((module) => ({
+    module,
+    view: false,
+    create: false,
+    update: false,
+    delete: false,
+    export: false,
+  }));
 
-const MODULES = [
-  'Dashboard',
-  'Students',
-  'Academic Management',
-  'Administration',
-  'Trainers',
-  'Attendance',
-  'Payments',
-  'Admin Users',
-  'Roles & Permissions',
-  'Profile',
-];
-
-// Access reflects the real `authorize()` middleware on the API: every Super
-// Admin route currently requires the SUPER_ADMIN role, since only the Super
-// Admin portal has been built so far.
-const ACCESS = {
-  SUPER_ADMIN: MODULES.map(() => true),
-  ADMIN: MODULES.map(() => false),
-  TRAINER: MODULES.map(() => false),
-  STUDENT: MODULES.map(() => false),
-};
-
-export default function RolesPermissions() {
-  const [counts, setCounts] = useState({});
-  const [loading, setLoading] = useState(true);
+function NewRoleModal({ open, onClose, onCreated }) {
+  const [form, setForm] = useState({ name: '', label: '', description: '' });
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const guardSubmit = useSubmitGuard();
 
   useEffect(() => {
-    axiosInstance
-      .get('/roles/summary')
-      .then((res) => {
-        const map = Object.fromEntries(res.data.data.map((r) => [r.role, r.count]));
-        setCounts(map);
-      })
-      .catch(() => setError('Failed to load role summary'))
-      .finally(() => setLoading(false));
-  }, []);
+    if (open) {
+      setForm({ name: '', label: '', description: '' });
+      setError('');
+    }
+  }, [open]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    guardSubmit(async () => {
+      if (!form.name.trim() || !form.label.trim()) {
+        setError('Role name and label are required');
+        return;
+      }
+      setSubmitting(true);
+      setError('');
+      try {
+        const created = await rolesApi.create({ ...form, permissions: emptyMatrix() });
+        onCreated(created);
+        onClose();
+      } catch (err) {
+        setError(getErrorMessage(err, 'Failed to create role'));
+      } finally {
+        setSubmitting(false);
+      }
+    });
+  };
 
   return (
-    <PageContainer title="Roles & Permissions" description="Overview of system roles and module access">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="New Role"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button type="submit" form="new-role-form" disabled={submitting}>
+            {submitting ? 'Creating…' : 'Create Role'}
+          </Button>
+        </>
+      }
+    >
+      <form id="new-role-form" onSubmit={handleSubmit}>
+        <FormField label="Role Name (unique code)" htmlFor="roleName" required>
+          <Input
+            id="roleName"
+            value={form.name}
+            onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+            placeholder="e.g. CAMPUS_MANAGER"
+          />
+        </FormField>
+        <FormField label="Display Label" htmlFor="roleLabel" required>
+          <Input
+            id="roleLabel"
+            value={form.label}
+            onChange={(e) => setForm((p) => ({ ...p, label: e.target.value }))}
+            placeholder="e.g. Campus Manager"
+          />
+        </FormField>
+        <FormField label="Description" htmlFor="roleDescription">
+          <Textarea
+            id="roleDescription"
+            value={form.description}
+            onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+          />
+        </FormField>
+        {error && <p className="mb-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+        <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500">
+          New roles start with every permission unchecked — configure the matrix after creating.
+        </p>
+      </form>
+    </Modal>
+  );
+}
+
+function PermissionMatrix({ permissions, locked, onToggle }) {
+  return (
+    <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <table className="w-full min-w-max text-left text-sm">
+        <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+          <tr>
+            <th className="px-4 py-3 font-medium">Module</th>
+            {PERMISSION_ACTIONS.map((action) => (
+              <th key={action} className="px-4 py-3 text-center font-medium capitalize">
+                {action}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {permissions.map((entry) => (
+            <tr key={entry.module}>
+              <td className="px-4 py-2.5 text-slate-700">{MODULE_LABELS[entry.module] || entry.module}</td>
+              {PERMISSION_ACTIONS.map((action) => (
+                <td key={action} className="px-4 py-2.5 text-center">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(entry[action])}
+                    disabled={locked}
+                    onChange={() => onToggle(entry.module, action)}
+                    className="h-4 w-4 accent-blue-600 disabled:opacity-40"
+                  />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export default function RolesPermissions() {
+  const { can } = useAuth();
+  const [roles, setRoles] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+  const [matrix, setMatrix] = useState([]);
+  const [dirty, setDirty] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [newRoleOpen, setNewRoleOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteError, setDeleteError] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
+  const canCreate = can('rolesPermissions', 'create');
+  const canUpdate = can('rolesPermissions', 'update');
+  const canDelete = can('rolesPermissions', 'delete');
+
+  const loadRoles = () => {
+    setLoading(true);
+    rolesApi
+      .list()
+      .then((res) => {
+        setRoles(res.data);
+        setSelectedId((prev) => prev || res.data[0]?._id || null);
+      })
+      .catch(() => setError('Failed to load roles'))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadRoles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const selectedRole = useMemo(() => roles.find((r) => r._id === selectedId) || null, [roles, selectedId]);
+
+  useEffect(() => {
+    if (selectedRole) {
+      setMatrix(selectedRole.permissions);
+      setDirty(false);
+      setSaveError('');
+    }
+  }, [selectedRole]);
+
+  const handleToggle = (module, action) => {
+    if (selectedRole?.isSystem || !canUpdate) return;
+    setMatrix((prev) => prev.map((p) => (p.module === module ? { ...p, [action]: !p[action] } : p)));
+    setDirty(true);
+  };
+
+  const handleSave = async () => {
+    if (!selectedRole) return;
+    setSaving(true);
+    setSaveError('');
+    try {
+      const updated = await rolesApi.update(selectedRole._id, {
+        label: selectedRole.label,
+        description: selectedRole.description,
+        permissions: matrix,
+      });
+      setRoles((prev) => prev.map((r) => (r._id === updated._id ? { ...updated, userCount: r.userCount } : r)));
+      setDirty(false);
+    } catch (err) {
+      setSaveError(getErrorMessage(err, 'Failed to save permissions'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await rolesApi.remove(deleteTarget._id);
+      setRoles((prev) => prev.filter((r) => r._id !== deleteTarget._id));
+      if (selectedId === deleteTarget._id) setSelectedId(null);
+      setDeleteTarget(null);
+    } catch (err) {
+      setDeleteError(getErrorMessage(err, 'Failed to delete role'));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <PageContainer
+      title="Roles & Permissions"
+      description="Configure per-module, per-action access for every role"
+      actions={
+        canCreate && (
+          <Button onClick={() => setNewRoleOpen(true)}>
+            <Plus size={16} /> New Role
+          </Button>
+        )
+      }
+    >
       {error && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{error}</div>}
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {Object.entries(ROLE_META).map(([role, meta]) => {
-          const Icon = meta.icon;
-          return (
-            <div key={role} className="rounded-xl border border-slate-200 bg-white p-5">
-              <div className="mb-3 flex items-center gap-3">
-                <span className={`flex h-10 w-10 items-center justify-center rounded-lg ${meta.color}`}>
-                  <Icon size={20} />
-                </span>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_1fr]">
+        <div className="space-y-2">
+          {loading && <p className="text-sm text-slate-400">Loading roles…</p>}
+          {roles.map((role) => (
+            <button
+              key={role._id}
+              type="button"
+              onClick={() => setSelectedId(role._id)}
+              className={`flex w-full items-center justify-between gap-2 rounded-xl border px-4 py-3 text-left transition-colors ${
+                selectedId === role._id
+                  ? 'border-blue-300 bg-blue-50'
+                  : 'border-slate-200 bg-white hover:bg-slate-50'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {role.isSystem ? (
+                  <ShieldCheck size={18} className="text-blue-600" />
+                ) : (
+                  <KeyRound size={18} className="text-slate-400" />
+                )}
                 <div>
-                  <p className="font-semibold text-slate-800">{meta.label}</p>
-                  <p className="text-sm text-blue-600">{loading ? '—' : counts[role] || 0} users</p>
+                  <p className="text-sm font-semibold text-slate-800">{role.label}</p>
+                  <p className="text-xs text-slate-500">{role.userCount || 0} users</p>
                 </div>
               </div>
-              <p className="text-xs text-slate-500">{meta.description}</p>
-            </div>
-          );
-        })}
-      </div>
+              {role.isSystem && <Lock size={14} className="text-slate-300" />}
+            </button>
+          ))}
+        </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="mb-1 text-base font-semibold text-slate-800">Module Access</h2>
-        <p className="mb-4 text-sm text-slate-500">Which roles can currently access each module.</p>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-max text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-3 font-medium">Module</th>
-                {Object.values(ROLE_META).map((meta) => (
-                  <th key={meta.label} className="px-4 py-3 text-center font-medium">
-                    {meta.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {MODULES.map((module, i) => (
-                <tr key={module}>
-                  <td className="px-4 py-2.5 text-slate-700">{module}</td>
-                  {Object.keys(ROLE_META).map((role) => (
-                    <td key={role} className="px-4 py-2.5 text-center">
-                      {ACCESS[role][i] ? (
-                        <Check size={16} className="mx-auto text-green-600" />
-                      ) : (
-                        <Minus size={16} className="mx-auto text-slate-300" />
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          {!selectedRole ? (
+            <p className="text-sm text-slate-400">Select a role to view its permissions.</p>
+          ) : (
+            <>
+              <div className="mb-4 flex items-start justify-between">
+                <div>
+                  <h2 className="text-base font-semibold text-slate-800">{selectedRole.label}</h2>
+                  <p className="text-sm text-slate-500">{selectedRole.description || 'No description'}</p>
+                  {selectedRole.isSystem && (
+                    <p className="mt-1 flex items-center gap-1 text-xs font-medium text-blue-600">
+                      <Lock size={12} /> System role — full access is fixed and cannot be edited.
+                    </p>
+                  )}
+                </div>
+                {canDelete && !selectedRole.isSystem && (
+                  <Button variant="danger" onClick={() => setDeleteTarget(selectedRole)}>
+                    <Trash2 size={16} /> Delete
+                  </Button>
+                )}
+              </div>
+
+              <PermissionMatrix
+                permissions={matrix}
+                locked={selectedRole.isSystem || !canUpdate}
+                onToggle={handleToggle}
+              />
+
+              {saveError && (
+                <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{saveError}</p>
+              )}
+
+              {!selectedRole.isSystem && canUpdate && (
+                <div className="mt-4 flex justify-end">
+                  <Button onClick={handleSave} disabled={!dirty || saving}>
+                    <Check size={16} /> {saving ? 'Saving…' : 'Save Permissions'}
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
+
+      <NewRoleModal
+        open={newRoleOpen}
+        onClose={() => setNewRoleOpen(false)}
+        onCreated={(created) => {
+          setRoles((prev) => [...prev, { ...created, userCount: 0 }]);
+          setSelectedId(created._id);
+        }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onClose={() => {
+          setDeleteTarget(null);
+          setDeleteError('');
+        }}
+        onConfirm={handleDelete}
+        loading={deleting}
+        title="Delete Role"
+        message={
+          deleteError ||
+          `Are you sure you want to delete "${deleteTarget?.label}"? This cannot be undone.`
+        }
+        confirmLabel="Delete"
+      />
     </PageContainer>
   );
 }

@@ -22,4 +22,26 @@ const ENROLLMENT_STATUSES = [
 
 const PAYMENT_STATUSES = ['pending', 'partial', 'paid', 'overdue', 'refunded', 'waived'];
 
-module.exports = { ROLES, ENROLLMENT_STATUSES, PAYMENT_STATUSES };
+const PERMISSION_MODULES = [
+  'dashboard',
+  'students',
+  'courses',
+  'batches',
+  'cities',
+  'campuses',
+  'slots',
+  'trainers',
+  'attendance',
+  'payments',
+  'adminUsers',
+  'rolesPermissions',
+  'updation',
+  'profile',
+  'assignments',
+  'quizzes',
+  'progress',
+];
+
+const PERMISSION_ACTIONS = ['view', 'create', 'update', 'delete', 'export'];
+
+module.exports = { ROLES, ENROLLMENT_STATUSES, PAYMENT_STATUSES, PERMISSION_MODULES, PERMISSION_ACTIONS };

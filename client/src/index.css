@@ -1,9 +1,16 @@
 @import "tailwindcss";
 
 @theme {
-  --color-sidebar: #1f2430;
-  --color-sidebar-hover: #2a3040;
-  --color-sidebar-active: #16a34a;
+  --color-sidebar: #0d1330;
+  --color-sidebar-header: #0a0f24;
+  --color-sidebar-hover: #1a2249;
+  --color-sidebar-active: #9c7a3d;
+  --color-sidebar-active-hover: #86682f;
+  --color-sidebar-menu-active: #dadbeb;
+  --color-sidebar-menu-active-text: #0d1330;
+  --color-sidebar-border: rgba(255, 255, 255, 0.08);
+  --color-sidebar-text: #aab1d6;
+  --color-sidebar-text-muted: #6b7299;
   --color-app-bg: #f3f4f6;
   --color-primary: #2563eb;
   --color-primary-hover: #1d4ed8;

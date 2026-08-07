@@ -1,3 +1,5 @@
+import EmptyState from './EmptyState';
+
 // columns: [{ key, header, render?(row) }]
 export default function Table({ columns, data, emptyMessage = 'No records found' }) {
   return (
@@ -15,8 +17,8 @@ export default function Table({ columns, data, emptyMessage = 'No records found'
         <tbody className="divide-y divide-slate-100">
           {data.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className="px-4 py-10 text-center text-slate-400">
-                {emptyMessage}
+              <td colSpan={columns.length} className="px-4 py-0">
+                <EmptyState title={emptyMessage} />
               </td>
             </tr>
           ) : (

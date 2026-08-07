@@ -16,6 +16,7 @@ import useCrudResource from '../../hooks/useCrudResource';
 import useSubmitGuard from '../../hooks/useSubmitGuard';
 import { getErrorMessage } from '../../utils/errors';
 import coursesApi from '../../api/coursesApi';
+import { useAuth } from '../../context/AuthContext';
 
 const emptyForm = { name: '', code: '', description: '', durationInMonths: '', fee: '', isActive: true };
 
@@ -128,6 +129,10 @@ function CourseFormDrawer({ open, onClose, course, onSubmit }) {
 }
 
 export default function Courses() {
+  const { can } = useAuth();
+  const canCreate = can('courses', 'create');
+  const canUpdate = can('courses', 'update');
+  const canDelete = can('courses', 'delete');
   const { items, total, totalPages, page, setPage, search, changeSearch, loading, error, refetch, handleDeleted } =
     useCrudResource(coursesApi.list, { limit: 10 });
 
@@ -179,11 +184,11 @@ export default function Courses() {
       header: '',
       render: (row) => (
         <RowActions
-          onEdit={() => {
+          onEdit={canUpdate ? () => {
             setEditing(row);
             setFormOpen(true);
-          }}
-          onDelete={() => setDeleteTarget(row)}
+          } : undefined}
+          onDelete={canDelete ? () => setDeleteTarget(row) : undefined}
         />
       ),
     },
@@ -194,14 +199,16 @@ export default function Courses() {
       title="Courses"
       description="Manage the courses offered by your institute"
       actions={
-        <Button
-          onClick={() => {
-            setEditing(null);
-            setFormOpen(true);
-          }}
-        >
-          <Plus size={16} /> Add Course
-        </Button>
+        canCreate && (
+          <Button
+            onClick={() => {
+              setEditing(null);
+              setFormOpen(true);
+            }}
+          >
+            <Plus size={16} /> Add Course
+          </Button>
+        )
       }
     >
       <div className="relative mb-4 w-full max-w-xs">

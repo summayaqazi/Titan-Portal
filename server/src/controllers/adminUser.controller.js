@@ -10,12 +10,15 @@ const getAdminUsers = asyncHandler(async (req, res) => {
 
   const filter = { role: { $in: ADMIN_ROLES } };
   if (req.query.role && ADMIN_ROLES.includes(req.query.role)) filter.role = req.query.role;
+  if (req.query.isActive !== undefined && req.query.isActive !== '') {
+    filter.isActive = req.query.isActive === 'true';
+  }
   if (search) {
     filter.$or = [{ name: { $regex: search, $options: 'i' } }, { email: { $regex: search, $options: 'i' } }];
   }
 
   const [items, total] = await Promise.all([
-    User.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+    User.find(filter).populate({ path: 'campus', populate: { path: 'city' } }).sort({ createdAt: -1 }).skip(skip).limit(limit),
     User.countDocuments(filter),
   ]);
 
@@ -23,7 +26,7 @@ const getAdminUsers = asyncHandler(async (req, res) => {
 });
 
 const createAdminUser = asyncHandler(async (req, res) => {
-  const { name, email, password, phone, role } = req.body;
+  const { name, email, password, phone, role, campus } = req.body;
 
   if (!name || !email || !role || !ADMIN_ROLES.includes(role)) {
     res.status(400);
@@ -36,7 +39,14 @@ const createAdminUser = asyncHandler(async (req, res) => {
     throw new Error('A user with this email already exists');
   }
 
-  const user = await User.create({ name, email, password: password || 'Admin123', phone, role });
+  const user = await User.create({
+    name,
+    email,
+    password: password || 'Admin123',
+    phone,
+    role,
+    campus: campus || undefined,
+  });
   res.status(201).json({ success: true, data: user });
 });
 
@@ -47,7 +57,7 @@ const updateAdminUser = asyncHandler(async (req, res) => {
     throw new Error('Admin user not found');
   }
 
-  const { name, email, phone, role, isActive } = req.body;
+  const { name, email, phone, role, isActive, campus } = req.body;
 
   if (email !== undefined && email !== user.email) {
     const existing = await User.findOne({ email });
@@ -59,7 +69,27 @@ const updateAdminUser = asyncHandler(async (req, res) => {
   }
   if (name !== undefined) user.name = name;
   if (phone !== undefined) user.phone = phone;
-  if (isActive !== undefined) user.isActive = isActive;
+  if (campus !== undefined) user.campus = campus || undefined;
+
+  if (isActive !== undefined && isActive !== user.isActive) {
+    if (isActive === false) {
+      if (user._id.equals(req.user._id)) {
+        res.status(400);
+        throw new Error('You cannot deactivate your own account');
+      }
+      if (user.role === ROLES.SUPER_ADMIN) {
+        const activeSuperAdminCount = await User.countDocuments({
+          role: ROLES.SUPER_ADMIN,
+          isActive: true,
+        });
+        if (activeSuperAdminCount <= 1) {
+          res.status(400);
+          throw new Error('Cannot deactivate the last remaining active Super Admin');
+        }
+      }
+    }
+    user.isActive = isActive;
+  }
 
   if (role !== undefined && role !== user.role) {
     if (!ADMIN_ROLES.includes(role)) {
@@ -77,6 +107,7 @@ const updateAdminUser = asyncHandler(async (req, res) => {
   }
 
   await user.save();
+  await user.populate({ path: 'campus', populate: { path: 'city' } });
   res.json({ success: true, data: user });
 });
 

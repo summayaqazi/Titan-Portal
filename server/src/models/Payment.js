@@ -21,8 +21,24 @@ const paymentSchema = new mongoose.Schema(
     paidDate: { type: Date },
     receivedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     remarks: { type: String, trim: true },
+
+    feeType: {
+      type: String,
+      enum: ['registration', 'monthly', 'installment'],
+      default: 'monthly',
+    },
+    invoiceNumber: { type: String, unique: true, sparse: true },
+    // Only meaningful for feeType 'monthly' — 'YYYY-MM' of the billing period,
+    // used to prevent duplicate generation and derive the next month on regenerate.
+    month: { type: String },
   },
   { timestamps: true }
+);
+
+// Prevents generating two monthly-fee payments for the same enrollment/month.
+paymentSchema.index(
+  { enrollment: 1, feeType: 1, month: 1 },
+  { unique: true, partialFilterExpression: { feeType: 'monthly' } }
 );
 
 module.exports = mongoose.model('Payment', paymentSchema);

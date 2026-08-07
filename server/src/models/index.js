@@ -9,5 +9,12 @@ module.exports = {
   Slot: require('./Slot'),
   Enrollment: require('./Enrollment'),
   Attendance: require('./Attendance'),
+  TrainerAttendance: require('./TrainerAttendance'),
   Payment: require('./Payment'),
+  Assignment: require('./Assignment'),
+  Submission: require('./Submission'),
+  Quiz: require('./Quiz'),
+  CourseProgress: require('./CourseProgress'),
+  Role: require('./Role'),
+  Counter: require('./Counter'),
 };

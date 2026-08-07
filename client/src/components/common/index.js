@@ -1,6 +1,6 @@
 export { default as PageContainer } from './PageContainer';
-export { default as ComingSoon } from './ComingSoon';
 export { default as StatusBadge } from './StatusBadge';
+export { default as StatPill } from './StatPill';
 export { default as Table } from './Table';
 export { default as Modal } from './Modal';
 export { default as Drawer } from './Drawer';
@@ -12,3 +12,8 @@ export { default as Button } from './Button';
 export { default as Pagination } from './Pagination';
 export { default as ConfirmDialog } from './ConfirmDialog';
 export { default as RowActions } from './RowActions';
+export { default as ImageUpload } from './ImageUpload';
+export { default as MultiFileInput } from './MultiFileInput';
+export { default as EmptyState } from './EmptyState';
+export { default as Avatar } from './Avatar';
+export { default as BrandLogo } from './BrandLogo';

@@ -30,4 +30,28 @@ const upload = multer({
   limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
 });
 
+// Broader instance for Assignment reference images + attachments — shares
+// the same disk storage, but also accepts common document types (not just
+// images). Only used by the assignment routes; every other upload site
+// keeps using the images-only `upload` above, untouched.
+const documentFileFilter = (req, file, cb) => {
+  const allowedTypes = /jpeg|jpg|png|webp|pdf|docx?|zip/;
+  const isValid = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+
+  if (isValid) {
+    cb(null, true);
+  } else {
+    const error = new Error('Only image, PDF, Word or zip files are allowed');
+    error.statusCode = 400;
+    cb(error);
+  }
+};
+
+const uploadDocument = multer({
+  storage,
+  fileFilter: documentFileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+});
+
 module.exports = upload;
+module.exports.uploadDocument = uploadDocument;

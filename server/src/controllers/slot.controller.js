@@ -2,6 +2,7 @@ const asyncHandler = require('express-async-handler');
 const Slot = require('../models/Slot');
 const Batch = require('../models/Batch');
 const { parseListQuery, paginatedResponse } = require('../utils/queryHelpers');
+const { requireAdminCampusScope } = require('../utils/campusScope');
 
 const getSlots = asyncHandler(async (req, res) => {
   const { page, limit, search, skip } = parseListQuery(req);
@@ -9,6 +10,14 @@ const getSlots = asyncHandler(async (req, res) => {
   const filter = {};
   if (search) filter.label = { $regex: search, $options: 'i' };
   if (req.query.isActive !== undefined) filter.isActive = req.query.isActive === 'true';
+  // Slots aren't owned by a campus — scope to the slots actually used by
+  // that campus's batches. Always enforced for ADMIN, never falls through
+  // to the full, unscoped slot catalog.
+  const campusScope = requireAdminCampusScope(req);
+  if (campusScope) {
+    const campusSlotIds = await Batch.distinct('slot', { campus: campusScope });
+    filter._id = { $in: campusSlotIds };
+  }
 
   const [items, total] = await Promise.all([
     Slot.find(filter).sort({ startTime: 1 }).skip(skip).limit(limit),

@@ -4,10 +4,11 @@ const Student = require('../models/Student');
 const Course = require('../models/Course');
 const Batch = require('../models/Batch');
 const { ENROLLMENT_STATUSES } = require('../utils/constants');
+const { requireAdminCampusScope } = require('../utils/campusScope');
 
 const POPULATE = [
   { path: 'student', populate: { path: 'user', select: 'name email' } },
-  { path: 'course', select: 'name code' },
+  { path: 'course', select: 'name code fee' },
   { path: 'batch', select: 'batchCode' },
   { path: 'campus', select: 'name' },
   { path: 'trainer', populate: { path: 'user', select: 'name' } },
@@ -15,9 +16,13 @@ const POPULATE = [
 ];
 
 const getStudentEnrollments = asyncHandler(async (req, res) => {
-  const enrollments = await Enrollment.find({ student: req.params.studentId })
-    .populate(POPULATE)
-    .sort({ admissionDate: -1 });
+  // Scopes the Student Details drawer to only the selected campus's
+  // enrollments for this student — always enforced for ADMIN.
+  const filter = { student: req.params.studentId };
+  const campusScope = requireAdminCampusScope(req);
+  if (campusScope) filter.campus = campusScope;
+
+  const enrollments = await Enrollment.find(filter).populate(POPULATE).sort({ admissionDate: -1 });
 
   res.json({ success: true, data: enrollments });
 });
@@ -89,11 +94,65 @@ const updateEnrollment = asyncHandler(async (req, res) => {
     }
     enrollment.status = status;
   }
-  if (paymentStatus !== undefined) enrollment.paymentStatus = paymentStatus;
+  if (paymentStatus !== undefined && paymentStatus !== enrollment.paymentStatus) {
+    enrollment.history.push({
+      status: enrollment.status,
+      note: `Payment status changed to ${paymentStatus}${note ? ` (${note})` : ''}`,
+      changedBy: req.user._id,
+    });
+    enrollment.paymentStatus = paymentStatus;
+  }
   if (rollNumber !== undefined) enrollment.rollNumber = rollNumber;
 
   await enrollment.save();
   res.json({ success: true, data: await enrollment.populate(POPULATE) });
+});
+
+// @desc    Bulk-update enrollment status by roll number — backs the
+//          Updation page. Reuses the same status-change + history logic as
+//          updateEnrollment rather than duplicating it.
+// @route   POST /api/enrollments/bulk-status
+const bulkUpdateStatus = asyncHandler(async (req, res) => {
+  const { rollNumbers, status } = req.body;
+
+  if (!Array.isArray(rollNumbers) || rollNumbers.length === 0) {
+    res.status(400);
+    throw new Error('At least one roll number is required');
+  }
+  if (!status || !ENROLLMENT_STATUSES.includes(status)) {
+    res.status(400);
+    throw new Error('A valid status is required');
+  }
+
+  const cleaned = [...new Set(rollNumbers.map((r) => String(r).trim()).filter(Boolean))];
+
+  const updated = [];
+  const notFound = [];
+
+  for (const rollNumber of cleaned) {
+    // eslint-disable-next-line no-await-in-loop
+    const enrollment = await Enrollment.findOne({
+      rollNumber: { $regex: `^${rollNumber}$`, $options: 'i' },
+    }).sort({ admissionDate: -1 });
+
+    if (!enrollment) {
+      notFound.push(rollNumber);
+      continue;
+    }
+
+    if (status !== enrollment.status) {
+      enrollment.history.push({ status, note: 'Bulk update via Updation page', changedBy: req.user._id });
+      enrollment.status = status;
+      // eslint-disable-next-line no-await-in-loop
+      await enrollment.save();
+    }
+    updated.push(rollNumber);
+  }
+
+  res.json({
+    success: true,
+    data: { updatedCount: updated.length, notFoundCount: notFound.length, updated, notFound },
+  });
 });
 
 const deleteEnrollment = asyncHandler(async (req, res) => {
@@ -107,4 +166,10 @@ const deleteEnrollment = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Enrollment deleted' });
 });
 
-module.exports = { getStudentEnrollments, createEnrollment, updateEnrollment, deleteEnrollment };
+module.exports = {
+  getStudentEnrollments,
+  createEnrollment,
+  updateEnrollment,
+  bulkUpdateStatus,
+  deleteEnrollment,
+};

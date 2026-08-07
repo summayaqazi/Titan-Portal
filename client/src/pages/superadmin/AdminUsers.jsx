@@ -17,12 +17,15 @@ import useCrudResource from '../../hooks/useCrudResource';
 import useSubmitGuard from '../../hooks/useSubmitGuard';
 import { getErrorMessage } from '../../utils/errors';
 import adminUsersApi from '../../api/adminUsersApi';
+import campusesApi from '../../api/campusesApi';
 import { useAuth } from '../../context/AuthContext';
 
 const ROLES = ['SUPER_ADMIN', 'ADMIN'];
-const emptyForm = { name: '', email: '', phone: '', role: 'ADMIN', isActive: true };
+const emptyForm = { name: '', email: '', phone: '', password: '', role: 'ADMIN', campus: '', isActive: true };
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_RE = /^[0-9+\-\s()]{7,15}$/;
 
-function AdminUserFormDrawer({ open, onClose, user, onSubmit }) {
+function AdminUserFormDrawer({ open, onClose, user, campuses, onSubmit }) {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -33,7 +36,15 @@ function AdminUserFormDrawer({ open, onClose, user, onSubmit }) {
     if (!open) return;
     setForm(
       user
-        ? { name: user.name, email: user.email, phone: user.phone || '', role: user.role, isActive: user.isActive }
+        ? {
+            name: user.name,
+            email: user.email,
+            phone: user.phone || '',
+            password: '',
+            role: user.role,
+            campus: user.campus?._id || user.campus || '',
+            isActive: user.isActive,
+          }
         : emptyForm
     );
     setError('');
@@ -52,9 +63,23 @@ function AdminUserFormDrawer({ open, onClose, user, onSubmit }) {
         setError('Name and email are required');
         return;
       }
+      if (!EMAIL_RE.test(form.email)) {
+        setError('Enter a valid email address');
+        return;
+      }
+      if (form.phone && !PHONE_RE.test(form.phone)) {
+        setError('Enter a valid phone number');
+        return;
+      }
+      if (!isEdit && form.password && form.password.length < 6) {
+        setError('Password must be at least 6 characters');
+        return;
+      }
       setSubmitting(true);
       try {
-        await onSubmit(form);
+        const payload = { ...form };
+        if (isEdit || !payload.password) delete payload.password;
+        await onSubmit(payload);
         onClose();
       } catch (err) {
         setError(getErrorMessage(err, 'Failed to save admin user'));
@@ -88,7 +113,7 @@ function AdminUserFormDrawer({ open, onClose, user, onSubmit }) {
           <Input id="email" type="email" value={form.email} onChange={handleChange('email')} required />
         </FormField>
         <FormField label="Phone" htmlFor="phone">
-          <Input id="phone" value={form.phone} onChange={handleChange('phone')} />
+          <Input id="phone" value={form.phone} onChange={handleChange('phone')} placeholder="03xx-xxxxxxx" />
         </FormField>
         <FormField label="Role" htmlFor="role" required>
           <Select id="role" value={form.role} onChange={handleChange('role')} required>
@@ -99,6 +124,18 @@ function AdminUserFormDrawer({ open, onClose, user, onSubmit }) {
             ))}
           </Select>
         </FormField>
+        {form.role === 'ADMIN' && (
+          <FormField label="Campus" htmlFor="campus">
+            <Select id="campus" value={form.campus} onChange={handleChange('campus')}>
+              <option value="">Unassigned</option>
+              {(campuses || []).map((c) => (
+                <option key={c._id} value={c._id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+        )}
         {isEdit && (
           <FormField label="Active" htmlFor="isActive">
             <label className="flex items-center gap-2 text-sm text-slate-600">
@@ -108,9 +145,20 @@ function AdminUserFormDrawer({ open, onClose, user, onSubmit }) {
           </FormField>
         )}
         {!isEdit && (
-          <p className="mb-2 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500">
-            A login account will be created with the default password <strong>Admin123</strong>.
-          </p>
+          <>
+            <FormField label="Password (optional)" htmlFor="password">
+              <Input
+                id="password"
+                type="password"
+                value={form.password}
+                onChange={handleChange('password')}
+                placeholder="Leave blank to use default"
+              />
+            </FormField>
+            <p className="mb-2 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500">
+              Leave the password blank to create the account with the default password <strong>Admin123</strong>.
+            </p>
+          </>
         )}
         {error && <p className="mb-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
       </form>
@@ -119,7 +167,10 @@ function AdminUserFormDrawer({ open, onClose, user, onSubmit }) {
 }
 
 export default function AdminUsers() {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, can } = useAuth();
+  const canCreate = can('adminUsers', 'create');
+  const canUpdate = can('adminUsers', 'update');
+  const canDelete = can('adminUsers', 'delete');
   const {
     items,
     total,
@@ -141,6 +192,13 @@ export default function AdminUsers() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [toggleError, setToggleError] = useState('');
+  const [togglingId, setTogglingId] = useState(null);
+  const [campuses, setCampuses] = useState([]);
+
+  useEffect(() => {
+    campusesApi.list({ limit: 100 }).then((res) => setCampuses(res.data));
+  }, []);
 
   const handleSubmit = async (values) => {
     if (editing) {
@@ -165,6 +223,19 @@ export default function AdminUsers() {
     }
   };
 
+  const handleToggleActive = async (row) => {
+    setToggleError('');
+    setTogglingId(row._id);
+    try {
+      await adminUsersApi.update(row._id, { isActive: !row.isActive });
+      refetch();
+    } catch (err) {
+      setToggleError(getErrorMessage(err, 'Failed to update status'));
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
   const columns = [
     {
       key: 'name',
@@ -180,17 +251,34 @@ export default function AdminUsers() {
     },
     { key: 'phone', header: 'Phone', render: (row) => row.phone || '—' },
     { key: 'role', header: 'Role', render: (row) => <StatusBadge status={row.role === 'SUPER_ADMIN' ? 'approved' : 'pending'} /> },
-    { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.isActive ? 'active' : 'inactive'} /> },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (row) => {
+        const isSelf = row._id === currentUser?.id;
+        return (
+          <button
+            type="button"
+            disabled={!canUpdate || isSelf || togglingId === row._id}
+            onClick={() => handleToggleActive(row)}
+            title={isSelf ? 'You cannot deactivate your own account' : 'Toggle status'}
+            className="disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <StatusBadge status={row.isActive ? 'active' : 'inactive'} />
+          </button>
+        );
+      },
+    },
     {
       key: 'actions',
       header: '',
       render: (row) => (
         <RowActions
-          onEdit={() => {
+          onEdit={canUpdate ? () => {
             setEditing(row);
             setFormOpen(true);
-          }}
-          onDelete={() => setDeleteTarget(row)}
+          } : undefined}
+          onDelete={canDelete ? () => setDeleteTarget(row) : undefined}
           deleteDisabled={row._id === currentUser?.id}
           deleteTitle="You cannot delete your own account"
         />
@@ -203,14 +291,16 @@ export default function AdminUsers() {
       title="Admin Users"
       description="Manage admin accounts for campuses"
       actions={
-        <Button
-          onClick={() => {
-            setEditing(null);
-            setFormOpen(true);
-          }}
-        >
-          <Plus size={16} /> Add Admin User
-        </Button>
+        canCreate && (
+          <Button
+            onClick={() => {
+              setEditing(null);
+              setFormOpen(true);
+            }}
+          >
+            <Plus size={16} /> Add Admin User
+          </Button>
+        )
       }
     >
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -226,7 +316,20 @@ export default function AdminUsers() {
             </option>
           ))}
         </Select>
+        <Select
+          className="w-auto"
+          value={filters.isActive ?? ''}
+          onChange={(e) => setFilter('isActive', e.target.value)}
+        >
+          <option value="">All statuses</option>
+          <option value="true">Active</option>
+          <option value="false">Inactive</option>
+        </Select>
       </div>
+
+      {toggleError && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">{toggleError}</div>
+      )}
 
       {error ? (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{error}</div>
@@ -237,7 +340,13 @@ export default function AdminUsers() {
         </div>
       )}
 
-      <AdminUserFormDrawer open={formOpen} onClose={() => setFormOpen(false)} user={editing} onSubmit={handleSubmit} />
+      <AdminUserFormDrawer
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        user={editing}
+        campuses={campuses}
+        onSubmit={handleSubmit}
+      />
 
       <ConfirmDialog
         open={Boolean(deleteTarget)}

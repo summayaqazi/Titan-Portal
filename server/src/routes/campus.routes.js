@@ -6,13 +6,20 @@ const {
   updateCampus,
   deleteCampus,
 } = require('../controllers/campus.controller');
-const { protect, authorize } = require('../middleware/auth.middleware');
+const { protect, authorize, checkPermission } = require('../middleware/auth.middleware');
 const { ROLES } = require('../utils/constants');
 
 const router = express.Router();
-router.use(protect, authorize(ROLES.SUPER_ADMIN));
+router.use(protect, authorize(ROLES.SUPER_ADMIN, ROLES.ADMIN));
 
-router.route('/').get(getCampuses).post(createCampus);
-router.route('/:id').get(getCampus).put(updateCampus).delete(deleteCampus);
+router
+  .route('/')
+  .get(checkPermission('campuses', 'view'), getCampuses)
+  .post(checkPermission('campuses', 'create'), createCampus);
+router
+  .route('/:id')
+  .get(checkPermission('campuses', 'view'), getCampus)
+  .put(checkPermission('campuses', 'update'), updateCampus)
+  .delete(checkPermission('campuses', 'delete'), deleteCampus);
 
 module.exports = router;

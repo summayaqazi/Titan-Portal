@@ -16,6 +16,10 @@ const userSchema = new mongoose.Schema(
     },
     phone: { type: String, trim: true },
     avatar: { type: String },
+    // Optional campus assignment for campus-level roles (e.g. ADMIN) — drives
+    // the Country/City/Campus display on the Profile page. Unused by
+    // SUPER_ADMIN.
+    campus: { type: mongoose.Schema.Types.ObjectId, ref: 'Campus' },
     isActive: { type: Boolean, default: true },
     lastLogin: { type: Date },
   },

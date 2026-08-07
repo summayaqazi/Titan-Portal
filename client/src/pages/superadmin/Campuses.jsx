@@ -18,6 +18,7 @@ import useSubmitGuard from '../../hooks/useSubmitGuard';
 import { getErrorMessage } from '../../utils/errors';
 import campusesApi from '../../api/campusesApi';
 import citiesApi from '../../api/citiesApi';
+import { useAuth } from '../../context/AuthContext';
 
 const emptyForm = { name: '', city: '', address: '', contactNumber: '', isActive: true };
 
@@ -118,6 +119,10 @@ function CampusFormDrawer({ open, onClose, campus, cities, onSubmit }) {
 }
 
 export default function Campuses() {
+  const { can } = useAuth();
+  const canCreate = can('campuses', 'create');
+  const canUpdate = can('campuses', 'update');
+  const canDelete = can('campuses', 'delete');
   const {
     items,
     total,
@@ -179,11 +184,11 @@ export default function Campuses() {
       header: '',
       render: (row) => (
         <RowActions
-          onEdit={() => {
+          onEdit={canUpdate ? () => {
             setEditing(row);
             setFormOpen(true);
-          }}
-          onDelete={() => setDeleteTarget(row)}
+          } : undefined}
+          onDelete={canDelete ? () => setDeleteTarget(row) : undefined}
         />
       ),
     },
@@ -194,14 +199,16 @@ export default function Campuses() {
       title="Campuses"
       description="Manage physical campus locations"
       actions={
-        <Button
-          onClick={() => {
-            setEditing(null);
-            setFormOpen(true);
-          }}
-        >
-          <Plus size={16} /> Add Campus
-        </Button>
+        canCreate && (
+          <Button
+            onClick={() => {
+              setEditing(null);
+              setFormOpen(true);
+            }}
+          >
+            <Plus size={16} /> Add Campus
+          </Button>
+        )
       }
     >
       <div className="mb-4 flex flex-wrap items-center gap-3">

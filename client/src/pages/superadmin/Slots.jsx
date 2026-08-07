@@ -14,8 +14,10 @@ import {
 } from '../../components/common';
 import useCrudResource from '../../hooks/useCrudResource';
 import useSubmitGuard from '../../hooks/useSubmitGuard';
+import useAdminCampusFilter from '../../hooks/useAdminCampusFilter';
 import { getErrorMessage } from '../../utils/errors';
 import slotsApi from '../../api/slotsApi';
+import { useAuth } from '../../context/AuthContext';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const emptyForm = { label: '', startTime: '', endTime: '', days: [], isActive: true };
@@ -126,8 +128,18 @@ function SlotFormDrawer({ open, onClose, slot, onSubmit }) {
 }
 
 export default function Slots() {
+  const { can } = useAuth();
+  const canCreate = can('slots', 'create');
+  const canUpdate = can('slots', 'update');
+  const canDelete = can('slots', 'delete');
+  // Undefined for every role but ADMIN — Super Admin's request is
+  // byte-for-byte unchanged. Slots aren't owned by a campus, so this scopes
+  // to the slots actually used by the selected campus's batches (see
+  // slot.controller.js).
+  const campusFilter = useAdminCampusFilter();
+  const listSlots = (params) => slotsApi.list({ ...params, campus: campusFilter });
   const { items, total, totalPages, page, setPage, loading, error, refetch, handleDeleted } = useCrudResource(
-    slotsApi.list,
+    listSlots,
     { limit: 10 }
   );
 
@@ -170,11 +182,11 @@ export default function Slots() {
       header: '',
       render: (row) => (
         <RowActions
-          onEdit={() => {
+          onEdit={canUpdate ? () => {
             setEditing(row);
             setFormOpen(true);
-          }}
-          onDelete={() => setDeleteTarget(row)}
+          } : undefined}
+          onDelete={canDelete ? () => setDeleteTarget(row) : undefined}
         />
       ),
     },
@@ -185,14 +197,16 @@ export default function Slots() {
       title="Slots"
       description="Manage class timing slots"
       actions={
-        <Button
-          onClick={() => {
-            setEditing(null);
-            setFormOpen(true);
-          }}
-        >
-          <Plus size={16} /> Add Slot
-        </Button>
+        canCreate && (
+          <Button
+            onClick={() => {
+              setEditing(null);
+              setFormOpen(true);
+            }}
+          >
+            <Plus size={16} /> Add Slot
+          </Button>
+        )
       }
     >
       {error ? (
