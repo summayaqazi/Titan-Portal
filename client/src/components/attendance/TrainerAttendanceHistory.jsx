@@ -117,7 +117,7 @@ export default function TrainerAttendanceHistory({
             type="button"
             onClick={() => handleCheckOut(row)}
             disabled={busyId === row._id}
-            className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 disabled:opacity-40"
+            className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-700 disabled:opacity-40"
           >
             <LogOut size={13} /> Check Out
           </button>

@@ -176,7 +176,7 @@ export default function StudentDetailDrawer({ open, onClose, student, batches, o
             className="h-16 w-16 rounded-full border border-slate-200 object-cover"
           />
         ) : (
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-100 text-lg font-semibold text-blue-700">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary-100 text-lg font-semibold text-primary-700">
             {studentData.user?.name?.charAt(0) || '?'}
           </div>
         )}

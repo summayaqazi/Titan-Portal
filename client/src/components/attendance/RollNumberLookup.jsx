@@ -63,7 +63,7 @@ export default function RollNumberLookup({ campusFilter }) {
                 className="h-12 w-12 rounded-full border border-slate-200 object-cover"
               />
             ) : (
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-blue-700">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary-100 text-primary-700">
                 <User size={20} />
               </div>
             )}

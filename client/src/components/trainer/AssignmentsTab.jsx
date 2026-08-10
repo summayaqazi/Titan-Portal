@@ -20,6 +20,18 @@ import SubmissionsView from './SubmissionsView';
 
 const emptyForm = { title: '', description: '', dueDate: '', referenceLinks: [], topic: '' };
 
+// A datetime-local input needs "YYYY-MM-DDTHH:mm" in the *browser's* local
+// time (not UTC) — Date's local getters (getHours/getMinutes/...) give
+// exactly that when fed the server's ISO string, so an existing deadline
+// re-populates showing the same wall-clock time it was set at, not a
+// UTC-shifted one.
+function toDatetimeLocalValue(isoString) {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 // Small "type a value, press Enter or Add to add a chip" input — used by
 // Reference Links (a genuine list of strings). Topic is a single field, not
 // a tag list, so it doesn't use this.
@@ -54,7 +66,7 @@ function TagListInput({ values, onChange, placeholder }) {
       {values.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {values.map((v, i) => (
-            <span key={i} className="flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+            <span key={i} className="flex items-center gap-1 rounded-full bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700">
               {v}
               <button type="button" onClick={() => onChange(values.filter((_, idx) => idx !== i))} className="hover:text-red-600">
                 <X size={12} />
@@ -85,7 +97,7 @@ function AssignmentFormDrawer({ open, onClose, assignment, onSubmit }) {
         ? {
             title: assignment.title,
             description: assignment.description || '',
-            dueDate: assignment.dueDate ? assignment.dueDate.slice(0, 10) : '',
+            dueDate: toDatetimeLocalValue(assignment.dueDate),
             referenceLinks: assignment.referenceLinks || [],
             topic: assignment.topic || '',
           }
@@ -110,6 +122,12 @@ function AssignmentFormDrawer({ open, onClose, assignment, onSubmit }) {
       try {
         await onSubmit({
           ...form,
+          // The <input type="datetime-local"> value has no timezone info —
+          // parsed here (in the browser) it's correctly read as the
+          // trainer's own local time; converting to ISO before it leaves
+          // the browser means the server stores the right UTC instant
+          // regardless of what timezone the server itself runs in.
+          dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : '',
           referenceImageFiles,
           attachmentFiles,
           removeReferenceImages,
@@ -155,8 +173,13 @@ function AssignmentFormDrawer({ open, onClose, assignment, onSubmit }) {
           />
         </FormField>
 
-        <FormField label="Due Date" htmlFor="dueDate">
-          <Input id="dueDate" type="date" value={form.dueDate} onChange={(e) => setForm((p) => ({ ...p, dueDate: e.target.value }))} />
+        <FormField label="Submission Deadline (date & time)" htmlFor="dueDate">
+          <Input
+            id="dueDate"
+            type="datetime-local"
+            value={form.dueDate}
+            onChange={(e) => setForm((p) => ({ ...p, dueDate: e.target.value }))}
+          />
         </FormField>
 
         <FormField label="Topic" htmlFor="topic">
@@ -247,12 +270,25 @@ function AssignmentList({ batchId, onViewSubmissions }) {
       render: (row) => <span className="line-clamp-1 max-w-xs text-slate-500">{stripHtml(row.description) || '—'}</span>,
     },
     { key: 'topic', header: 'Topic', render: (row) => row.topic || '—' },
-    { key: 'dueDate', header: 'Due Date', render: (row) => (row.dueDate ? new Date(row.dueDate).toLocaleDateString() : '—') },
+    {
+      key: 'dueDate',
+      header: 'Deadline',
+      render: (row) =>
+        row.dueDate
+          ? new Date(row.dueDate).toLocaleString(undefined, {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+            })
+          : '—',
+    },
     {
       key: 'submissions',
       header: '',
       render: (row) => (
-        <button type="button" onClick={() => onViewSubmissions(row)} className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline">
+        <button type="button" onClick={() => onViewSubmissions(row)} className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline">
           <Eye size={14} /> View ({row.submissionCount})
         </button>
       ),

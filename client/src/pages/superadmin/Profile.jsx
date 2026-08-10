@@ -236,7 +236,7 @@ function AccountSummaryCard() {
             {grantedModules.map((label) => (
               <span
                 key={label}
-                className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700"
+                className="rounded-full bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700"
               >
                 {label}
               </span>

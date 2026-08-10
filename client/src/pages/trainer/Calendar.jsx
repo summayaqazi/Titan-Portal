@@ -129,7 +129,7 @@ export default function Calendar() {
                     <>
                       <span
                         className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs ${
-                          isToday(day) ? 'bg-blue-600 font-semibold text-white' : 'text-slate-600'
+                          isToday(day) ? 'bg-primary-600 font-semibold text-white' : 'text-slate-600'
                         }`}
                       >
                         {day}
@@ -141,7 +141,7 @@ export default function Calendar() {
                             type="button"
                             onClick={() => navigate(`/trainer/courses/${e.batchId}`)}
                             title={`${e.courseName} (${e.batchCode}) — ${e.startTime}-${e.endTime}`}
-                            className="block w-full truncate rounded bg-blue-50 px-1.5 py-0.5 text-left text-[11px] text-blue-700 hover:bg-blue-100"
+                            className="block w-full truncate rounded bg-primary-50 px-1.5 py-0.5 text-left text-[11px] text-primary-700 hover:bg-primary-100"
                           >
                             {e.startTime} {e.courseName}
                           </button>

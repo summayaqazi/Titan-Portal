@@ -152,7 +152,7 @@ function QuizList({ batchId, onManage }) {
         <button
           type="button"
           onClick={() => onManage(row)}
-          className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
+          className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline"
         >
           <ListChecks size={14} /> Manage
         </button>

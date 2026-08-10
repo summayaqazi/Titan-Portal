@@ -47,7 +47,7 @@ export default function TrainerDetailDrawer({ open, onClose, trainer }) {
         <div className="flex flex-wrap gap-1.5">
           {trainer.courses?.length ? (
             trainer.courses.map((c) => (
-              <span key={c._id} className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+              <span key={c._id} className="rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700">
                 {c.name}
               </span>
             ))
@@ -67,7 +67,7 @@ export default function TrainerDetailDrawer({ open, onClose, trainer }) {
                 href={url}
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium capitalize text-slate-500 hover:bg-slate-200 hover:text-blue-600"
+                className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium capitalize text-slate-500 hover:bg-slate-200 hover:text-primary-600"
               >
                 <Icon size={14} /> {key}
               </a>

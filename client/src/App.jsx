@@ -37,6 +37,7 @@ import TrainerProfile from './pages/trainer/Profile';
 import TrainerCourseWorkspace from './pages/trainer/CourseWorkspace';
 
 import StudentDashboard from './pages/student/Dashboard';
+import StudentAssignments from './pages/student/Assignments';
 
 // Each Super Admin / Admin page sits behind its own RoleRoute with a
 // `module` key so permission edits made on the Roles & Permissions page are
@@ -136,13 +137,14 @@ export default function App() {
 
             {/* Student Portal — reuses SuperAdminLayout exactly like Admin
                 and Trainer do (Sidebar/Header branch on user.role
-                internally, no new layout component needed). Phase 1:
-                Dashboard only, following the exact same incremental
-                approach the Trainer Portal used. */}
+                internally, no new layout component needed). Phase 1
+                (Dashboard) is done; Phase 2 (Assignments) follows the exact
+                same incremental approach the Trainer Portal used. */}
             <Route element={<RoleRoute allowedRoles={[ROLES.STUDENT]} />}>
               <Route path="/student" element={<SuperAdminLayout />}>
                 <Route index element={<Navigate to="dashboard" replace />} />
                 {studentModuleRoute('dashboard', 'dashboard', <StudentDashboard />)}
+                {studentModuleRoute('assignments', 'assignments', <StudentAssignments />)}
               </Route>
             </Route>
           </Route>

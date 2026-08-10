@@ -1,5 +1,12 @@
 const express = require('express');
-const { getDashboard, getCalendar, updateMyProfile, getCourseWorkspace, getCourseStudents } = require('../controllers/trainerPortal.controller');
+const {
+  getDashboard,
+  getCalendar,
+  updateMyProfile,
+  getCourseWorkspace,
+  getCourseStudents,
+  getCourseStudentDetail,
+} = require('../controllers/trainerPortal.controller');
 // Attendance roster is NOT reimplemented here — the exact same controller
 // function the Admin-facing /api/attendance routes use is imported and
 // reused as-is, with requireOwnBatch layered in front to scope it to the
@@ -68,6 +75,12 @@ router.put('/me/profile', checkPermission('profile', 'update'), updateMyProfile)
 
 router.get('/me/courses/:batchId', checkPermission('dashboard', 'view'), requireOwnBatch, getCourseWorkspace);
 router.get('/me/courses/:batchId/students', checkPermission('students', 'view'), requireOwnBatch, getCourseStudents);
+router.get(
+  '/me/courses/:batchId/students/:studentId',
+  checkPermission('students', 'view'),
+  requireOwnBatch,
+  getCourseStudentDetail
+);
 
 router.get('/me/attendance/roster', checkPermission('attendance', 'view'), requireOwnBatch, getRoster);
 // The trainer's own attendance history — sidebar-level (not batch-scoped

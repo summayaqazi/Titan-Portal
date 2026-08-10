@@ -12,8 +12,28 @@
   --color-sidebar-text: #aab1d6;
   --color-sidebar-text-muted: #6b7299;
   --color-app-bg: #f3f4f6;
-  --color-primary: #2563eb;
-  --color-primary-hover: #1d4ed8;
+
+  /* The "primary blue" (#2877B9) used across Super Admin, Admin, and
+     Trainer — a separate named scale rather than overriding Tailwind's
+     built-in `blue-*`, so anything not explicitly migrated to `primary-*`
+     (including every current Student Portal color, which is intentionally
+     out of scope) keeps rendering Tailwind's original default blue,
+     completely unaffected by this. `--color-primary-600` is the exact
+     reference color; the rest is a matching light-to-dark progression of
+     the same hue, preserving existing light-background/dark-text contrast
+     pairs (badges, hover states, focus rings, chart bars, etc.) — same
+     structure as before, just this one hue.  */
+  --color-primary-50: #f2f8fc;
+  --color-primary-100: #e2eef9;
+  --color-primary-200: #c0dbf1;
+  --color-primary-300: #92c1e7;
+  --color-primary-400: #57a0db;
+  --color-primary-500: #368cd3;
+  --color-primary-600: #2877b9;
+  --color-primary-700: #216297;
+  --color-primary-800: #1a4f7a;
+  --color-primary-900: #164165;
+  --color-primary-950: #0e293f;
 }
 
 body {

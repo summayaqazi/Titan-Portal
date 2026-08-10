@@ -106,7 +106,7 @@ function SlotFormDrawer({ open, onClose, slot, onSubmit }) {
                 onClick={() => toggleDay(day)}
                 className={`rounded-md border px-2.5 py-1 text-xs font-medium ${
                   form.days.includes(day)
-                    ? 'border-blue-600 bg-blue-50 text-blue-600'
+                    ? 'border-primary-600 bg-primary-50 text-primary-600'
                     : 'border-slate-300 text-slate-500 hover:bg-slate-50'
                 }`}
               >

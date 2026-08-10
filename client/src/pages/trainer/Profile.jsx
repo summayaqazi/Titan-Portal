@@ -3,10 +3,12 @@ import { Eye, EyeOff, Download, Link2, Globe } from 'lucide-react';
 import { PageContainer, FormField, Input, Textarea, Button, ImageUpload, Avatar } from '../../components/common';
 import { useAuth } from '../../context/AuthContext';
 import { updateProfileRequest, changePasswordRequest } from '../../api/profileApi';
+import { getMeRequest } from '../../api/authApi';
 import trainerPortalApi from '../../api/trainerPortalApi';
 import useSubmitGuard from '../../hooks/useSubmitGuard';
 import { getErrorMessage } from '../../utils/errors';
 import { resolveFileUrl } from '../../utils/fileUrl';
+import { downloadTrainerIdCard } from '../../utils/trainerIdCard';
 
 // Name/phone/avatar and password reuse the exact same endpoints
 // (/auth/profile, /auth/password) and form shape as Super Admin/Admin's own
@@ -259,8 +261,34 @@ function ChangePasswordForm() {
 }
 
 function ProfileHeader() {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const trainerProfile = user?.trainerProfile;
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleDownload = async () => {
+    setError('');
+    setDownloading(true);
+    try {
+      // Re-fetch first so an edit made just now (name, photo, or a course
+      // reassignment by Super Admin/Admin elsewhere) is reflected in the
+      // card instead of whatever was in memory since login.
+      let latestUser = user;
+      try {
+        const { user: fresh } = await getMeRequest();
+        latestUser = fresh;
+        updateUser(fresh);
+      } catch {
+        // Fall back to the in-memory profile — still real, still dynamic,
+        // just possibly a few minutes stale.
+      }
+      await downloadTrainerIdCard(latestUser);
+    } catch (err) {
+      setError(err.message || 'Failed to generate the ID card');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <div className="flex flex-col items-start justify-between gap-4 rounded-xl border border-slate-200 bg-white p-5 sm:flex-row sm:items-center lg:col-span-2">
@@ -272,10 +300,12 @@ function ProfileHeader() {
           <p className="mt-0.5 text-xs text-slate-400">{trainerProfile?.employeeId}</p>
         </div>
       </div>
-      {/* Future-ready: not wired up yet, no functionality expected in this phase. */}
-      <Button variant="secondary" disabled title="Coming soon">
-        <Download size={15} /> Download Profile Card
-      </Button>
+      <div className="flex flex-col items-start gap-1.5 sm:items-end">
+        <Button variant="secondary" onClick={handleDownload} disabled={downloading}>
+          <Download size={15} /> {downloading ? 'Generating…' : 'Download Profile ID'}
+        </Button>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+      </div>
     </div>
   );
 }

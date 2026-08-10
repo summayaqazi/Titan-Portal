@@ -111,7 +111,7 @@ export default function MarkAttendancePanel({ batches, onMarked, canMark }) {
                     onClick={() => setStatus(r.enrollment, s)}
                     className={`rounded-md border px-2.5 py-1 text-xs font-medium capitalize disabled:cursor-not-allowed disabled:opacity-50 ${
                       r.status === s
-                        ? 'border-blue-600 bg-blue-600 text-white'
+                        ? 'border-primary-600 bg-primary-600 text-white'
                         : 'border-slate-300 text-slate-500 hover:bg-slate-50'
                     }`}
                   >

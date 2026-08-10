@@ -409,7 +409,7 @@ export default function Payments() {
               type="button"
               onClick={() => handleDownloadInvoice(row)}
               disabled={busyId === row._id}
-              className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600 disabled:opacity-40"
+              className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-primary-600 disabled:opacity-40"
               aria-label="Download invoice"
               title="Download invoice"
             >
@@ -433,7 +433,7 @@ export default function Payments() {
               type="button"
               onClick={() => handleRegenerate(row)}
               disabled={busyId === row._id}
-              className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600 disabled:opacity-40"
+              className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-primary-600 disabled:opacity-40"
               aria-label="Regenerate next month"
               title="Generate next month's invoice"
             >

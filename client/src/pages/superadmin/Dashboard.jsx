@@ -28,15 +28,18 @@ import { SELECTED_CAMPUS_KEY } from '../../hooks/useAdminCampusFilter';
 // Portal page reads this same key via useAdminCampusFilter() to filter its
 // own data — see that hook for the single source of truth on the key name.
 
+// `iconClass` gives each stat's icon its own distinct, professional color
+// instead of all-blue — the value/number text below stays the one uniform
+// blue (#2877B9) for every card, set where StatCard is rendered below.
 const STAT_CARD_DEFS = [
-  { key: 'totalStudents', label: 'Total Students', icon: Users },
-  { key: 'enrolledStudents', label: 'Enrolled Students', icon: UserCheck },
-  { key: 'totalCourses', label: 'Courses', icon: BookOpen },
-  { key: 'totalCities', label: 'Cities', icon: MapPin },
-  { key: 'totalCampuses', label: 'Campuses', icon: Building2 },
-  { key: 'totalTrainers', label: 'Trainers', icon: UserCog },
-  { key: 'activeSlots', label: 'Active Slots', icon: Clock },
-  { key: 'registrationOpenBatches', label: 'Registration Open', icon: ClipboardCheck },
+  { key: 'totalStudents', label: 'Total Students', icon: Users, iconClass: 'bg-emerald-50 text-emerald-600' },
+  { key: 'enrolledStudents', label: 'Enrolled Students', icon: UserCheck, iconClass: 'bg-teal-50 text-teal-600' },
+  { key: 'totalCourses', label: 'Courses', icon: BookOpen, iconClass: 'bg-violet-50 text-violet-600' },
+  { key: 'totalCities', label: 'Cities', icon: MapPin, iconClass: 'bg-amber-50 text-amber-600' },
+  { key: 'totalCampuses', label: 'Campuses', icon: Building2, iconClass: 'bg-rose-50 text-rose-600' },
+  { key: 'totalTrainers', label: 'Trainers', icon: UserCog, iconClass: 'bg-indigo-50 text-indigo-600' },
+  { key: 'activeSlots', label: 'Active Slots', icon: Clock, iconClass: 'bg-cyan-50 text-cyan-600' },
+  { key: 'registrationOpenBatches', label: 'Registration Open', icon: ClipboardCheck, iconClass: 'bg-orange-50 text-orange-600' },
 ];
 
 export default function Dashboard() {
@@ -168,13 +171,35 @@ export default function Dashboard() {
           {statsError}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {statCardDefs.map(({ key, label, icon }) => (
+        // Shared by Super Admin (all 8 cards) and Admin (6, via
+        // statCardDefs' filter above) — this is the one Dashboard.jsx both
+        // portals render, so the mobile-2-per-row fix below applies to
+        // both automatically without touching Trainer/Student, which each
+        // have their own separate dashboard page and never hit this file.
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          {statCardDefs.map(({ key, label, icon, iconClass }) => (
             <StatCard
               key={key}
               label={label}
               icon={icon}
               value={statsLoading ? '—' : (stats?.[key] ?? 0)}
+              valueClassName="text-[#2877B9]"
+              iconClassName={iconClass}
+              // Smaller padding/icon/gap only below `sm` — two cards per
+              // row at phone widths need tighter internal spacing than the
+              // original single-column card did to avoid feeling cramped;
+              // `sm:` and up restores the exact original card look.
+              className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 sm:gap-4 sm:p-5"
+              iconWrapClassName="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg sm:h-11 sm:w-11"
+              // StatCard's label is `truncate` (ellipsis) by default. Below
+              // `sm`, two-per-row cards are narrow enough that a longer
+              // label (e.g. "Registration Open") would truncate to
+              // something unreadable, so it wraps onto two lines there
+              // instead — `max-sm:whitespace-normal!` beats the hardcoded
+              // `truncate` via Tailwind's important modifier, but only
+              // below `sm`, so `sm:` and up keeps the original single-line
+              // truncated label untouched.
+              labelClassName="text-slate-500 max-sm:whitespace-normal! max-sm:break-words max-sm:leading-snug"
             />
           ))}
         </div>

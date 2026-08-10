@@ -15,6 +15,11 @@ const trainerPortalApi = {
   getCourseWorkspace: (batchId) => axiosInstance.get(`/trainer/me/courses/${batchId}`).then((res) => res.data.data),
   getCourseStudents: (batchId, params) =>
     axiosInstance.get(`/trainer/me/courses/${batchId}/students`, { params }).then((res) => res.data),
+  // Full read-only student profile + this batch's attendance/assignment/
+  // quiz data for them — same underlying Student record Super Admin/Admin
+  // manage (see trainerPortal.controller.js#getCourseStudentDetail).
+  getCourseStudentDetail: (batchId, studentId) =>
+    axiosInstance.get(`/trainer/me/courses/${batchId}/students/${studentId}`).then((res) => res.data.data),
 
   // Read-only — trainers view attendance, they never mark/update it (no
   // corresponding mark endpoint is exposed to this role at all).

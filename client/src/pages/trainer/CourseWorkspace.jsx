@@ -58,15 +58,22 @@ export default function CourseWorkspace() {
           <ArrowLeft size={12} /> Dashboard
         </Link>
       }
+      // Fills the layout's scrollable <main> exactly (h-full) instead of
+      // growing past it — so only the tab-content div below scrolls, and
+      // the breadcrumb/course-info/tabs above it (all shrink-0) never move.
+      // Without this, `<main>` itself scrolls the whole page (course info
+      // and tabs included), which is the "outer/full-page scroll" the
+      // mobile course/student view must not have.
+      className="flex h-full min-h-0 flex-col p-4 sm:p-6"
     >
       {error ? (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{error}</div>
       ) : loading ? (
         <p className="text-sm text-slate-400">Loading…</p>
       ) : (
-        <>
-          <div className="mb-5 rounded-xl border border-slate-200 bg-white p-5">
-            <h1 className="text-xl font-semibold text-slate-800">{workspace.course?.name}</h1>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="mb-5 shrink-0 rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+            <h1 className="text-lg font-semibold text-slate-800 sm:text-xl">{workspace.course?.name}</h1>
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500">
               <span className="flex items-center gap-1">
                 <MapPin size={13} /> {workspace.campus?.name} · {workspace.batchCode}
@@ -81,15 +88,18 @@ export default function CourseWorkspace() {
             </div>
           </div>
 
-          <div className="mb-5 flex gap-1 border-b border-slate-200">
+          {/* overflow-x-auto + shrink-0 buttons: on a narrow phone the 5
+              tabs scroll sideways within their own strip instead of
+              wrapping or overflowing the page. */}
+          <div className="mb-5 flex shrink-0 gap-1 overflow-x-auto border-b border-slate-200">
             {visibleTabs.map((tab) => (
               <button
                 key={tab.key}
                 type="button"
                 onClick={() => setActiveTab(tab.key)}
-                className={`border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                className={`shrink-0 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
                   activeTab === tab.key
-                    ? 'border-blue-600 text-blue-600'
+                    ? 'border-primary-600 text-primary-600'
                     : 'border-transparent text-slate-500 hover:text-slate-700'
                 }`}
               >
@@ -98,12 +108,14 @@ export default function CourseWorkspace() {
             ))}
           </div>
 
-          {activeTab === 'students' && <StudentsTab batchId={batchId} />}
-          {activeTab === 'attendance' && <AttendanceTab batchId={batchId} />}
-          {activeTab === 'assignments' && <AssignmentsTab batchId={batchId} />}
-          {activeTab === 'quizzes' && <QuizzesTab batchId={batchId} />}
-          {activeTab === 'progress' && <ProgressTab batchId={batchId} />}
-        </>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {activeTab === 'students' && <StudentsTab batchId={batchId} />}
+            {activeTab === 'attendance' && <AttendanceTab batchId={batchId} />}
+            {activeTab === 'assignments' && <AssignmentsTab batchId={batchId} />}
+            {activeTab === 'quizzes' && <QuizzesTab batchId={batchId} />}
+            {activeTab === 'progress' && <ProgressTab batchId={batchId} />}
+          </div>
+        </div>
       )}
     </PageContainer>
   );

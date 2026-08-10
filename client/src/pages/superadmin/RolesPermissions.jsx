@@ -125,7 +125,7 @@ function PermissionMatrix({ permissions, locked, onToggle }) {
                     checked={Boolean(entry[action])}
                     disabled={locked}
                     onChange={() => onToggle(entry.module, action)}
-                    className="h-4 w-4 accent-blue-600 disabled:opacity-40"
+                    className="h-4 w-4 accent-primary-600 disabled:opacity-40"
                   />
                 </td>
               ))}
@@ -248,13 +248,13 @@ export default function RolesPermissions() {
               onClick={() => setSelectedId(role._id)}
               className={`flex w-full items-center justify-between gap-2 rounded-xl border px-4 py-3 text-left transition-colors ${
                 selectedId === role._id
-                  ? 'border-blue-300 bg-blue-50'
+                  ? 'border-primary-300 bg-primary-50'
                   : 'border-slate-200 bg-white hover:bg-slate-50'
               }`}
             >
               <div className="flex items-center gap-2">
                 {role.isSystem ? (
-                  <ShieldCheck size={18} className="text-blue-600" />
+                  <ShieldCheck size={18} className="text-primary-600" />
                 ) : (
                   <KeyRound size={18} className="text-slate-400" />
                 )}
@@ -278,7 +278,7 @@ export default function RolesPermissions() {
                   <h2 className="text-base font-semibold text-slate-800">{selectedRole.label}</h2>
                   <p className="text-sm text-slate-500">{selectedRole.description || 'No description'}</p>
                   {selectedRole.isSystem && (
-                    <p className="mt-1 flex items-center gap-1 text-xs font-medium text-blue-600">
+                    <p className="mt-1 flex items-center gap-1 text-xs font-medium text-primary-600">
                       <Lock size={12} /> System role — full access is fixed and cannot be edited.
                     </p>
                   )}

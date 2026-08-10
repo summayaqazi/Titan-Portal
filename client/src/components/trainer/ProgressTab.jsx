@@ -9,7 +9,7 @@ function ProgressBar({ percent, className = '' }) {
   return (
     <div className={`h-2 w-full overflow-hidden rounded-full bg-slate-100 ${className}`}>
       <div
-        className={`h-full rounded-full transition-all ${percent === 100 ? 'bg-green-500' : 'bg-blue-500'}`}
+        className={`h-full rounded-full transition-all ${percent === 100 ? 'bg-green-500' : 'bg-primary-500'}`}
         style={{ width: `${percent}%` }}
       />
     </div>
@@ -33,7 +33,7 @@ function InlineEditable({ value, onSave, textClassName }) {
             setDraft(value);
             setEditing(true);
           }}
-          className="text-slate-300 hover:text-blue-600"
+          className="text-slate-300 hover:text-primary-600"
         >
           <Pencil size={12} />
         </button>
@@ -78,7 +78,7 @@ function AddInline({ placeholder, onAdd, buttonLabel }) {
 
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline">
+      <button type="button" onClick={() => setOpen(true)} className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline">
         <Plus size={13} /> {buttonLabel}
       </button>
     );
@@ -123,15 +123,18 @@ function AddInline({ placeholder, onAdd, buttonLabel }) {
 
 function TopicRow({ topic, onToggle, onRename, onDelete }) {
   return (
-    <div className="flex items-center gap-2 border-t border-slate-100 py-2 pl-8 pr-1 first:border-t-0">
+    // Completion is now shown by the row's own subtle green tint (plus the
+    // filled check icon below) instead of strikethrough — the topic name
+    // stays full, normal text either way, never dimmed or crossed out.
+    <div
+      className={`flex items-center gap-2 border-t border-slate-100 py-2 pl-8 pr-1 first:border-t-0 ${
+        topic.completed ? 'bg-green-50/60' : ''
+      }`}
+    >
       <button type="button" onClick={onToggle} className={topic.completed ? 'text-green-600' : 'text-slate-300 hover:text-slate-400'}>
         {topic.completed ? <CheckCircle2 size={17} /> : <Circle size={17} />}
       </button>
-      <InlineEditable
-        value={topic.title}
-        onSave={onRename}
-        textClassName={`text-sm ${topic.completed ? 'text-slate-400 line-through' : 'text-slate-700'}`}
-      />
+      <InlineEditable value={topic.title} onSave={onRename} textClassName="text-sm text-slate-700" />
       <button type="button" onClick={onDelete} className="rounded p-1 text-slate-300 hover:bg-red-50 hover:text-red-600">
         <Trash2 size={13} />
       </button>
@@ -241,7 +244,7 @@ export default function ProgressTab({ batchId }) {
       </div>
 
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatPill size="md" icon={Layers} label="Modules" value={progress.modules.length} colorClass="bg-blue-50 text-blue-600" />
+        <StatPill size="md" icon={Layers} label="Modules" value={progress.modules.length} colorClass="bg-primary-50 text-primary-600" />
         <StatPill size="md" icon={TrendingUp} label="Total Topics" value={progress.totalTopics} colorClass="bg-slate-100 text-slate-600" />
         <StatPill size="md" icon={CheckCircle2} label="Completed Topics" value={progress.completedTopics} colorClass="bg-green-50 text-green-600" />
         <StatPill size="md" icon={Circle} label="Remaining Topics" value={progress.remainingTopics} colorClass="bg-amber-50 text-amber-600" />

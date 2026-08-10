@@ -23,9 +23,9 @@ export default function Modal({ open, onClose, title, children, footer, size = '
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`w-full ${sizeClass} rounded-lg bg-white shadow-xl`}
+        className={`flex max-h-[90vh] w-full ${sizeClass} flex-col rounded-lg bg-white shadow-xl`}
       >
-        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 sm:px-5 sm:py-4">
           <h2 className="text-base font-semibold text-slate-800">{title}</h2>
           <button
             type="button"
@@ -36,8 +36,10 @@ export default function Modal({ open, onClose, title, children, footer, size = '
             <X size={18} />
           </button>
         </div>
-        <div className="px-5 py-4">{children}</div>
-        {footer && <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">{footer}</div>}
+        <div className="overflow-y-auto px-4 py-4 sm:px-5">{children}</div>
+        {footer && (
+          <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 px-4 py-4 sm:px-5">{footer}</div>
+        )}
       </div>
     </div>
   );

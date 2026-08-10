@@ -61,7 +61,7 @@ export default function ImageUpload({ currentUrl, onChange, onRemove, error, set
         }}
         onClick={() => inputRef.current?.click()}
         className={`flex cursor-pointer items-center gap-3 border-2 border-dashed px-4 py-3 text-sm transition-colors ${shape} ${
-          dragActive ? 'border-blue-400 bg-blue-50' : 'border-slate-300 hover:bg-slate-50'
+          dragActive ? 'border-primary-400 bg-primary-50' : 'border-slate-300 hover:bg-slate-50'
         }`}
       >
         {displayUrl ? (

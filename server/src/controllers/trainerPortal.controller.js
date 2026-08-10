@@ -2,6 +2,10 @@ const asyncHandler = require('express-async-handler');
 const Batch = require('../models/Batch');
 const Enrollment = require('../models/Enrollment');
 const Assignment = require('../models/Assignment');
+const Student = require('../models/Student');
+const Attendance = require('../models/Attendance');
+const Submission = require('../models/Submission');
+const Quiz = require('../models/Quiz');
 const { toTrainerProfile } = require('../utils/trainerProfile');
 const { parseListQuery, paginatedResponse } = require('../utils/queryHelpers');
 const { getCourseProgressPercent } = require('../utils/courseProgress');
@@ -263,7 +267,12 @@ const getCourseStudents = asyncHandler(async (req, res) => {
     name: e.student?.user?.name,
     email: e.student?.user?.email,
     phone: e.student?.user?.phone,
-    avatar: e.student?.user?.avatar,
+    // The student's profile picture lives on the Student document
+    // (`profilePicture`, set by Super Admin/Admin's student upload) — not
+    // on the linked User's `avatar`, which is never populated for
+    // students. Reading the right field is what makes the same picture
+    // Super Admin/Admin see also show up here.
+    avatar: e.student?.profilePicture,
     rollNumber: e.rollNumber,
     status: e.status,
     admissionDate: e.admissionDate,
@@ -272,4 +281,90 @@ const getCourseStudents = asyncHandler(async (req, res) => {
   res.json(paginatedResponse({ items, total, page, limit }));
 });
 
-module.exports = { getDashboard, getCalendar, updateMyProfile, getCourseWorkspace, getCourseStudents };
+// @desc    Full read-only profile for one student — the SAME Student record
+//          Super Admin/Admin manage (never a separate trainer-side copy),
+//          plus this trainer's own batch-scoped attendance/assignment/quiz
+//          data for them. Ownership is verified via Enrollment exactly like
+//          getCourseStudents above (not a direct Student-by-id lookup), so
+//          a trainer can only ever open a student who is actually on their
+//          own batch roster.
+// @route   GET /api/trainer/me/courses/:batchId/students/:studentId
+// @access  Private (TRAINER)
+const getCourseStudentDetail = asyncHandler(async (req, res) => {
+  const enrollment = await Enrollment.findOne({ batch: req.batch._id, student: req.params.studentId }).populate(
+    'campus',
+    'name'
+  );
+  if (!enrollment) {
+    res.status(404);
+    throw new Error('Student not found in this batch');
+  }
+
+  const student = await Student.findById(req.params.studentId).populate([
+    { path: 'user', select: 'name email phone avatar isActive' },
+    { path: 'city', select: 'name' },
+  ]);
+  if (!student) {
+    res.status(404);
+    throw new Error('Student not found');
+  }
+
+  const attendanceRecords = await Attendance.find({ student: student._id, batch: req.batch._id }).sort({ date: -1 });
+  const counts = { present: 0, absent: 0, late: 0, leave: 0 };
+  attendanceRecords.forEach((a) => {
+    if (counts[a.status] !== undefined) counts[a.status] += 1;
+  });
+  const total = attendanceRecords.length;
+  const attendance = {
+    summary: {
+      total,
+      ...counts,
+      percentPresent: total ? Math.round(((counts.present + counts.late) / total) * 100) : 0,
+    },
+    // Most-recent-first, capped — this is a profile snapshot, not the full
+    // attendance ledger (Attendance Tab already covers that in depth).
+    records: attendanceRecords.slice(0, 30),
+  };
+
+  const assignments = await Assignment.find({ batch: req.batch._id }).sort({ createdAt: -1 });
+  const submissions = await Submission.find({
+    assignment: { $in: assignments.map((a) => a._id) },
+    student: student._id,
+  });
+  const submissionByAssignment = new Map(submissions.map((s) => [s.assignment.toString(), s]));
+  const assignmentList = assignments.map((a) => ({
+    _id: a._id,
+    title: a.title,
+    dueDate: a.dueDate,
+    submission: submissionByAssignment.get(a._id.toString()) || null,
+  }));
+
+  // Quizzes: this course's published/scheduled quiz catalog only. There is
+  // no student-attempt/scoring model anywhere in the system yet (quiz-
+  // taking hasn't shipped in the Student Portal), so this deliberately
+  // never fabricates a score or attempt status for the student — only
+  // lists what's actually available to them.
+  const quizzes = await Quiz.find({ batch: req.batch._id, status: { $in: ['published', 'scheduled'] } })
+    .select('title description durationMinutes totalMarks status scheduledAt publishedAt')
+    .sort({ createdAt: -1 });
+
+  res.json({
+    success: true,
+    data: {
+      student: student.toObject(),
+      enrollment,
+      attendance,
+      assignments: assignmentList,
+      quizzes,
+    },
+  });
+});
+
+module.exports = {
+  getDashboard,
+  getCalendar,
+  updateMyProfile,
+  getCourseWorkspace,
+  getCourseStudents,
+  getCourseStudentDetail,
+};

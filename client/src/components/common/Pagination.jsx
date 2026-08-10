@@ -4,7 +4,7 @@ export default function Pagination({ page, totalPages, total, onChange }) {
   if (!totalPages || totalPages <= 1) return null;
 
   return (
-    <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm text-slate-500">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-3 py-3 text-xs text-slate-500 sm:px-4 sm:text-sm">
       <span>{total} total</span>
       <div className="flex items-center gap-3">
         <button

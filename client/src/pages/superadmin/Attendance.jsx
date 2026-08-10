@@ -34,7 +34,7 @@ export default function Attendance() {
           type="button"
           onClick={() => setTab('students')}
           className={`rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
-            tab === 'students' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
+            tab === 'students' ? 'bg-primary-600 text-white' : 'text-slate-500 hover:bg-slate-50'
           }`}
         >
           Student Attendance
@@ -43,7 +43,7 @@ export default function Attendance() {
           type="button"
           onClick={() => setTab('trainers')}
           className={`rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
-            tab === 'trainers' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'
+            tab === 'trainers' ? 'bg-primary-600 text-white' : 'text-slate-500 hover:bg-slate-50'
           }`}
         >
           Trainer Attendance

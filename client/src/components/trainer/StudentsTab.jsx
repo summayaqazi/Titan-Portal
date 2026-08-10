@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Search, Eye } from 'lucide-react';
-import { Table, Pagination, Input, StatusBadge, Modal, Avatar } from '../common';
+import { Table, Pagination, Input, StatusBadge, Avatar } from '../common';
 import useCrudResource from '../../hooks/useCrudResource';
 import trainerPortalApi from '../../api/trainerPortalApi';
 import { resolveFileUrl } from '../../utils/fileUrl';
+import StudentDetailDrawer from './StudentDetailDrawer';
 
 // Trainer's read-only view of students enrolled in this one batch — always
 // via Enrollment (never a direct Course-on-Student field). No create/edit/
@@ -40,7 +41,7 @@ export default function StudentsTab({ batchId }) {
         <button
           type="button"
           onClick={() => setDetailStudent(row)}
-          className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
+          className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline"
         >
           <Eye size={14} /> View
         </button>
@@ -51,7 +52,7 @@ export default function StudentsTab({ batchId }) {
   return (
     <div>
       <div className="mb-4 flex items-center gap-3">
-        <div className="relative w-full max-w-xs">
+        <div className="relative w-full sm:max-w-xs">
           <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <Input
             className="pl-9"
@@ -65,47 +66,63 @@ export default function StudentsTab({ batchId }) {
       {error ? (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{error}</div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-          <Table columns={columns} data={loading ? [] : items} emptyMessage={loading ? 'Loading...' : 'No students found'} />
-          <Pagination page={page} totalPages={totalPages} total={total} onChange={setPage} />
-        </div>
+        <>
+          {/* Desktop/tablet: the shared Table (horizontally scrolls its own
+              container if ever needed, never the page). Hidden below sm —
+              a 5-column table with an avatar+email cell doesn't fit a phone
+              width without either clipping the name or forcing sideways
+              scrolling to reach Status/View, so phones get the dedicated
+              card list below instead of a shrunk table. */}
+          <div className="hidden overflow-hidden rounded-lg border border-slate-200 bg-white sm:block">
+            <Table columns={columns} data={loading ? [] : items} emptyMessage={loading ? 'Loading...' : 'No students found'} />
+            <Pagination page={page} totalPages={totalPages} total={total} onChange={setPage} />
+          </div>
+
+          {/* Mobile: one card per student — photo, full name, email, roll
+              number, status, and the View action are all visible at once,
+              nothing clipped or reachable only via horizontal scroll. */}
+          <div className="sm:hidden">
+            <div className="space-y-2.5">
+              {loading ? (
+                <p className="py-8 text-center text-sm text-slate-400">Loading...</p>
+              ) : items.length === 0 ? (
+                <p className="py-8 text-center text-sm text-slate-400">No students found</p>
+              ) : (
+                items.map((row) => (
+                  <button
+                    key={row.enrollmentId}
+                    type="button"
+                    onClick={() => setDetailStudent(row)}
+                    className="flex w-full items-center gap-3 rounded-lg border border-slate-200 bg-white p-3 text-left active:bg-slate-50"
+                  >
+                    <Avatar src={resolveFileUrl(row.avatar)} name={row.name} size={44} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-slate-800">{row.name}</p>
+                      <p className="truncate text-xs text-slate-400">{row.email}</p>
+                      <p className="mt-1 text-xs text-slate-500">Roll {row.rollNumber || '—'}</p>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1.5">
+                      <StatusBadge status={row.status} />
+                      <Eye size={16} className="text-primary-600" />
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="mt-2.5 overflow-hidden rounded-lg border border-slate-200 bg-white">
+              <Pagination page={page} totalPages={totalPages} total={total} onChange={setPage} />
+            </div>
+          </div>
+        </>
       )}
 
-      <Modal open={Boolean(detailStudent)} onClose={() => setDetailStudent(null)} title="Student Details" size="sm">
-        {detailStudent && (
-          <div>
-            <div className="mb-4 flex items-center gap-3">
-              <Avatar src={resolveFileUrl(detailStudent.avatar)} name={detailStudent.name} size={48} />
-              <div>
-                <p className="text-base font-semibold text-slate-800">{detailStudent.name}</p>
-                <p className="text-sm text-slate-500">{detailStudent.email}</p>
-              </div>
-            </div>
-            <dl className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <dt className="text-xs text-slate-400">Phone</dt>
-                <dd className="text-slate-700">{detailStudent.phone || '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-slate-400">Roll Number</dt>
-                <dd className="text-slate-700">{detailStudent.rollNumber || '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-slate-400">Enrollment Status</dt>
-                <dd>
-                  <StatusBadge status={detailStudent.status} />
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs text-slate-400">Admitted On</dt>
-                <dd className="text-slate-700">
-                  {detailStudent.admissionDate ? new Date(detailStudent.admissionDate).toLocaleDateString() : '—'}
-                </dd>
-              </div>
-            </dl>
-          </div>
-        )}
-      </Modal>
+      <StudentDetailDrawer
+        open={Boolean(detailStudent)}
+        onClose={() => setDetailStudent(null)}
+        batchId={batchId}
+        studentId={detailStudent?.studentId}
+        studentName={detailStudent?.name}
+      />
     </div>
   );
 }

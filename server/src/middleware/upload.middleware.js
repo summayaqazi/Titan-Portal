@@ -1,13 +1,25 @@
 const multer = require('multer');
 const path = require('path');
 
+// Strips anything that isn't safe in a filename/URL segment, so the
+// original name can be embedded directly in the stored filename below
+// without a path-traversal or header-injection risk.
+const sanitizeFilename = (name) => name.replace(/[^a-zA-Z0-9.\-_]/g, '_').slice(0, 80);
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, path.join(__dirname, '..', 'uploads'));
   },
+  // The unique prefix is still what guarantees no collisions; appending the
+  // sanitized original name (not just the extension) means a later
+  // "download" can recover a readable filename from the stored path alone
+  // — no separate "original name" column needed, and every existing upload
+  // site (avatars, payment proofs, assignments, ...) gets this for free.
   filename: (req, file, cb) => {
     const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${uniqueSuffix}${path.extname(file.originalname)}`);
+    const ext = path.extname(file.originalname);
+    const base = sanitizeFilename(path.basename(file.originalname, ext));
+    cb(null, `${uniqueSuffix}-${base}${ext}`);
   },
 });
 

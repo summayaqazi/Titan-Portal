@@ -9,7 +9,7 @@ export default function RowActions({ onView, onEdit, onDelete, deleteDisabled = 
         <button
           type="button"
           onClick={onView}
-          className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600"
+          className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-primary-600"
           aria-label="View"
         >
           <Eye size={15} />
@@ -19,7 +19,7 @@ export default function RowActions({ onView, onEdit, onDelete, deleteDisabled = 
         <button
           type="button"
           onClick={onEdit}
-          className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-blue-600"
+          className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-primary-600"
           aria-label="Edit"
         >
           <Pencil size={15} />

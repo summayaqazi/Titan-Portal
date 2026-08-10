@@ -24,7 +24,7 @@ export default function Avatar({ src, name, size = 32, className = '' }) {
   return (
     <div
       style={{ width: dimension, height: dimension }}
-      className={`flex shrink-0 items-center justify-center rounded-full bg-blue-100 font-semibold text-blue-700 ${className}`}
+      className={`flex shrink-0 items-center justify-center rounded-full bg-primary-100 font-semibold text-primary-700 ${className}`}
     >
       {name?.trim() ? name.trim().charAt(0).toUpperCase() : <User size={size * 0.55} />}
     </div>

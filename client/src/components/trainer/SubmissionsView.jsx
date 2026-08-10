@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Search, FileText, Link2, Check, X as XIcon, Users, CheckCircle2, Clock, XCircle, AlarmClockOff, Trash2 } from 'lucide-react';
+import { ArrowLeft, Search, FileText, Link2, Check, X as XIcon, Users, CheckCircle2, Clock, XCircle, AlarmClockOff, Trash2, Download } from 'lucide-react';
 import { Input, Button, Avatar, StatusBadge, EmptyState, Modal, Textarea, FormField, StatPill, ConfirmDialog } from '../common';
 import trainerAssignmentsApi from '../../api/trainerAssignmentsApi';
 import { getErrorMessage } from '../../utils/errors';
 import { resolveFileUrl } from '../../utils/fileUrl';
+import { downloadUploadedFile, prettyFileName } from '../../utils/downloadFile';
 
 const IMAGE_RE = /\.(png|jpe?g|webp|gif)$/i;
 
@@ -30,30 +31,56 @@ function SubmissionStatusBadge({ submission, assignment }) {
 }
 
 function FilePreview({ files }) {
+  const [downloadError, setDownloadError] = useState('');
+
   if (!files?.length) return <p className="text-sm text-slate-400">No files submitted</p>;
+
+  // Real download (blob-fetch + forced filename), not just "open in a new
+  // tab" — the anchor below still opens/previews the file, this button is
+  // the actual download action, with the original filename recovered from
+  // the stored path (see prettyFileName) and a clear message on failure.
+  const handleDownload = async (e, url) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDownloadError('');
+    try {
+      await downloadUploadedFile(resolveFileUrl(url), prettyFileName(url));
+    } catch (err) {
+      setDownloadError(err.message || 'Failed to download the file.');
+    }
+  };
+
   return (
-    <div className="grid grid-cols-3 gap-2">
-      {files.map((url) => {
-        const isImage = IMAGE_RE.test(url);
-        return (
-          <a
-            key={url}
-            href={resolveFileUrl(url)}
-            target="_blank"
-            rel="noreferrer"
-            className="block overflow-hidden rounded-md border border-slate-200 hover:border-blue-300"
-          >
-            {isImage ? (
-              <img src={resolveFileUrl(url)} alt={url} className="h-20 w-full object-cover" />
-            ) : (
-              <div className="flex h-20 flex-col items-center justify-center gap-1 bg-slate-50 text-slate-400">
-                <FileText size={20} />
-                <span className="truncate px-1 text-[10px]">{url.split('/').pop()}</span>
-              </div>
-            )}
-          </a>
-        );
-      })}
+    <div>
+      <div className="grid grid-cols-3 gap-2">
+        {files.map((url) => {
+          const isImage = IMAGE_RE.test(url);
+          return (
+            <div key={url} className="relative overflow-hidden rounded-md border border-slate-200 hover:border-primary-300">
+              <a href={resolveFileUrl(url)} target="_blank" rel="noreferrer" className="block">
+                {isImage ? (
+                  <img src={resolveFileUrl(url)} alt={prettyFileName(url)} className="h-20 w-full object-cover" />
+                ) : (
+                  <div className="flex h-20 flex-col items-center justify-center gap-1 bg-slate-50 text-slate-400">
+                    <FileText size={20} />
+                    <span className="truncate px-1 text-[10px]">{prettyFileName(url)}</span>
+                  </div>
+                )}
+              </a>
+              <button
+                type="button"
+                onClick={(e) => handleDownload(e, url)}
+                title="Download"
+                aria-label="Download file"
+                className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-md bg-white/90 text-slate-500 shadow-sm hover:bg-white hover:text-primary-600"
+              >
+                <Download size={13} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      {downloadError && <p className="mt-2 text-xs text-red-600">{downloadError}</p>}
     </div>
   );
 }
@@ -162,7 +189,7 @@ export default function SubmissionsView({ assignment, onBack }) {
       <h2 className="mb-4 text-lg font-semibold text-slate-800">{assignment.title} — Submissions</h2>
 
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <StatPill icon={Users} label="Total Submissions" value={stats.total} colorClass="bg-blue-50 text-blue-600" />
+        <StatPill icon={Users} label="Total Submissions" value={stats.total} colorClass="bg-primary-50 text-primary-600" />
         <StatPill icon={CheckCircle2} label="Approved" value={stats.approved} colorClass="bg-green-50 text-green-600" />
         <StatPill icon={XCircle} label="Not Approved" value={stats.rejected} colorClass="bg-red-50 text-red-600" />
         <StatPill icon={Clock} label="Pending" value={stats.pending} colorClass="bg-amber-50 text-amber-600" />
@@ -195,10 +222,10 @@ export default function SubmissionsView({ assignment, onBack }) {
                   type="button"
                   onClick={() => setSelectedId(s._id)}
                   className={`flex w-full items-center gap-2.5 border-b border-slate-100 px-3 py-2.5 text-left last:border-b-0 hover:bg-slate-50 ${
-                    selectedId === s._id ? 'bg-blue-50' : ''
+                    selectedId === s._id ? 'bg-primary-50' : ''
                   }`}
                 >
-                  <Avatar src={resolveFileUrl(s.student?.user?.avatar)} name={s.student?.user?.name} size={32} />
+                  <Avatar src={resolveFileUrl(s.student?.profilePicture)} name={s.student?.user?.name} size={32} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-slate-800">{s.student?.user?.name}</p>
                     <p className="truncate text-xs text-slate-400">{s.student?.user?.email}</p>
@@ -218,7 +245,7 @@ export default function SubmissionsView({ assignment, onBack }) {
             <div>
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <Avatar src={resolveFileUrl(selected.student?.user?.avatar)} name={selected.student?.user?.name} size={44} />
+                  <Avatar src={resolveFileUrl(selected.student?.profilePicture)} name={selected.student?.user?.name} size={44} />
                   <div>
                     <p className="text-base font-semibold text-slate-800">{selected.student?.user?.name}</p>
                     <p className="text-sm text-slate-500">{selected.student?.user?.email}</p>
@@ -245,7 +272,7 @@ export default function SubmissionsView({ assignment, onBack }) {
                   <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">Links</p>
                   <ul className="space-y-1">
                     {selected.links.map((link) => (
-                      <li key={link} className="flex items-center gap-1.5 text-sm text-blue-600">
+                      <li key={link} className="flex items-center gap-1.5 text-sm text-primary-600">
                         <Link2 size={13} />
                         <a href={link} target="_blank" rel="noreferrer" className="truncate hover:underline">
                           {link}

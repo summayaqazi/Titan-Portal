@@ -71,7 +71,7 @@ export default function AnalyticsChart({
                 cursor={{ fill: '#f1f5f9' }}
                 contentStyle={{ borderRadius: 8, borderColor: '#e2e8f0', fontSize: 13 }}
               />
-              <Bar dataKey="count" name="Enrollments" fill="#2563eb" radius={[4, 4, 0, 0]} maxBarSize={48}>
+              <Bar dataKey="count" name="Enrollments" fill="#2877B9" radius={[4, 4, 0, 0]} maxBarSize={48}>
                 <LabelList dataKey="count" position="top" style={{ fill: '#334155', fontSize: 12 }} />
               </Bar>
             </BarChart>

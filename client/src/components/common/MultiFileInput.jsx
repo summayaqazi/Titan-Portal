@@ -22,7 +22,7 @@ export default function MultiFileInput({ label, accept, files, onFilesChange, ex
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
-        className="flex items-center gap-2 rounded-md border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-500 hover:border-blue-400 hover:text-blue-600"
+        className="flex items-center gap-2 rounded-md border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-500 hover:border-primary-400 hover:text-primary-600"
       >
         <Paperclip size={14} /> {label || 'Add files'}
       </button>
@@ -33,7 +33,7 @@ export default function MultiFileInput({ label, accept, files, onFilesChange, ex
         <ul className="mt-2 space-y-1">
           {existingUrls.map((url) => (
             <li key={url} className="flex items-center justify-between gap-2 rounded-md bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600">
-              <a href={resolveFileUrl(url)} target="_blank" rel="noreferrer" className="truncate text-blue-600 hover:underline">
+              <a href={resolveFileUrl(url)} target="_blank" rel="noreferrer" className="truncate text-primary-600 hover:underline">
                 {url.split('/').pop()}
               </a>
               {onRemoveExisting && (
@@ -44,9 +44,9 @@ export default function MultiFileInput({ label, accept, files, onFilesChange, ex
             </li>
           ))}
           {files.map((file, i) => (
-            <li key={i} className="flex items-center justify-between gap-2 rounded-md bg-blue-50 px-2.5 py-1.5 text-xs text-blue-700">
+            <li key={i} className="flex items-center justify-between gap-2 rounded-md bg-primary-50 px-2.5 py-1.5 text-xs text-primary-700">
               <span className="truncate">{file.name}</span>
-              <button type="button" onClick={() => removeNew(i)} className="shrink-0 text-blue-400 hover:text-red-600">
+              <button type="button" onClick={() => removeNew(i)} className="shrink-0 text-primary-400 hover:text-red-600">
                 <X size={13} />
               </button>
             </li>

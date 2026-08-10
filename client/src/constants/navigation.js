@@ -92,11 +92,13 @@ export const TRAINER_NAV = [
   { label: 'Attendance', path: '/trainer/attendance', icon: CalendarCheck, module: 'attendance' },
 ];
 
-// Student Portal — Phase 1: Dashboard only. More entries (Courses,
-// Attendance, Payments, ...) land in later phases as their pages ship,
-// following the exact same incremental approach TRAINER_NAV above did.
+// Student Portal — Phase 1 (Dashboard) is done; Assignments (view + submit,
+// server-enforced deadlines) is Phase 2. More entries (Courses, Attendance,
+// Payments, ...) land in later phases as their pages ship, following the
+// exact same incremental approach TRAINER_NAV above did.
 export const STUDENT_NAV = [
   { label: 'Dashboard', path: '/student/dashboard', icon: LayoutDashboard, module: 'dashboard' },
+  { label: 'Assignments', path: '/student/assignments', icon: ClipboardList, module: 'assignments' },
 ];
 
 // Flattens a nav list (including grouped children) down to the set of

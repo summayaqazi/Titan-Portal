@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { ChevronDown, ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, LogOut, X } from 'lucide-react';
 import { SUPER_ADMIN_NAV, ADMIN_NAV, TRAINER_NAV, STUDENT_NAV } from '../../constants/navigation';
 import { ROLES } from '../../constants/roles';
 import { useAuth } from '../../context/AuthContext';
@@ -11,7 +11,7 @@ function isChildActive(item, pathname) {
   return item.children?.some((child) => pathname.startsWith(child.path));
 }
 
-export default function Sidebar({ collapsed, onToggle }) {
+export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onCloseMobile }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, can, logout } = useAuth();
@@ -59,31 +59,61 @@ export default function Sidebar({ collapsed, onToggle }) {
   };
 
   const linkClasses = ({ isActive }) =>
+    // Active reuses the exact same `--color-sidebar-hover` token/color as
+    // the hover state below, instead of the separate (lighter)
+    // `--color-sidebar-menu-active` token — active and hover are the same
+    // color everywhere in the sidebar by design.
     `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
       isActive
-        ? 'bg-(--color-sidebar-menu-active) text-(--color-sidebar-menu-active-text) font-medium shadow-sm'
+        ? 'bg-(--color-sidebar-hover) text-white font-medium shadow-sm'
         : 'text-(--color-sidebar-text) hover:bg-(--color-sidebar-hover) hover:text-white'
     }`;
 
   return (
-    <aside
-      className={`flex h-screen flex-col bg-(--color-sidebar) transition-all duration-200 ${
-        collapsed ? 'w-16' : 'w-64'
-      }`}
-    >
-      <div className="flex h-16 items-center gap-2.5 border-b border-(--color-sidebar-border) bg-(--color-sidebar-header) px-4">
+    <>
+      {/* Mobile-only backdrop: closes the drawer on outside tap. Never
+          rendered on md+ (desktop sidebar is static, not an overlay). */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-slate-900/50 md:hidden"
+          onClick={onCloseMobile}
+          aria-hidden="true"
+        />
+      )}
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 flex h-screen w-64 flex-col bg-(--color-sidebar) transition-transform duration-200 md:static md:z-auto md:translate-x-0 md:transition-[width] ${
+          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+        } ${collapsed ? 'md:w-16' : 'md:w-64'}`}
+      >
+      <div className="flex h-20 items-center justify-between overflow-hidden border-b border-(--color-sidebar-border) bg-(--color-sidebar-header) px-3 md:h-24 md:justify-center">
         <BrandLogo
-          size={36}
+          // The current logo is a wide horizontal lockup (~2.2:1), not a
+          // square icon — it needs a smaller height in the collapsed rail
+          // (only ~40px of content width available at w-16) than in the
+          // expanded sidebar (~232px available at w-64), or it would
+          // overflow the collapsed rail. See BrandLogo.jsx: `size` is the
+          // rendered height, width follows automatically from the image's
+          // own aspect ratio. 80px (expanded) is as large as this row
+          // (h-24 = 96px) comfortably allows without touching the
+          // top/bottom border. Mobile is always shown as the full-width
+          // overlay drawer (never the collapsed rail), so it ignores
+          // `collapsed` and always uses the expanded size there.
+          size={collapsed && !mobileOpen ? 20 : 80}
           className="shrink-0"
           fallback={
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-(--color-sidebar-active) text-base font-bold text-white shadow-sm">
+            <span className="flex h-[50px] w-[50px] shrink-0 items-center justify-center rounded-lg bg-(--color-sidebar-active) text-base font-bold text-white shadow-sm">
               T
             </span>
           }
         />
-        {!collapsed && (
-          <span className="truncate text-lg font-bold tracking-wide text-white">TITAN</span>
-        )}
+        <button
+          type="button"
+          onClick={onCloseMobile}
+          aria-label="Close menu"
+          className="rounded-md p-1.5 text-(--color-sidebar-text-muted) hover:bg-(--color-sidebar-hover) hover:text-white md:hidden"
+        >
+          <X size={20} />
+        </button>
       </div>
 
       <nav className="flex-1 space-y-1.5 overflow-y-auto px-3 py-5">
@@ -118,7 +148,7 @@ export default function Sidebar({ collapsed, onToggle }) {
                 {!collapsed && isOpen && (
                   <div className="mt-1 space-y-1 pl-8">
                     {item.children.map((child) => (
-                      <NavLink key={child.path} to={child.path} className={linkClasses}>
+                      <NavLink key={child.path} to={child.path} className={linkClasses} onClick={onCloseMobile}>
                         <span className="h-1 w-1 rounded-full bg-current" />
                         {child.label}
                       </NavLink>
@@ -130,7 +160,13 @@ export default function Sidebar({ collapsed, onToggle }) {
           }
 
           return (
-            <NavLink key={item.path} to={item.path} className={linkClasses} title={collapsed ? item.label : undefined}>
+            <NavLink
+              key={item.path}
+              to={item.path}
+              className={linkClasses}
+              title={collapsed ? item.label : undefined}
+              onClick={onCloseMobile}
+            >
               <Icon size={18} className="shrink-0" />
               {!collapsed && <span>{item.label}</span>}
             </NavLink>
@@ -149,9 +185,13 @@ export default function Sidebar({ collapsed, onToggle }) {
             <NavLink
               to="/trainer/profile"
               title={collapsed ? 'Profile' : undefined}
+              onClick={onCloseMobile}
               className={({ isActive }) =>
+                // Active reuses the exact same `--color-sidebar-hover`
+                // token/color as the hover state — same rule as every
+                // other nav item (`linkClasses` above).
                 `flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-1 py-1.5 transition-colors ${
-                  isActive ? 'bg-(--color-sidebar-menu-active)' : 'hover:bg-(--color-sidebar-hover)'
+                  isActive ? 'bg-(--color-sidebar-hover)' : 'hover:bg-(--color-sidebar-hover)'
                 } ${collapsed ? 'justify-center' : ''}`
               }
             >
@@ -197,14 +237,19 @@ export default function Sidebar({ collapsed, onToggle }) {
         </div>
       )}
 
+      {/* Collapse-to-rail is a desktop space-saving affordance; the mobile
+          drawer is an overlay so there's no layout benefit to collapsing it
+          there — hidden below md, same as the toggle's effect (collapsed
+          never applies while mobileOpen, see BrandLogo size above). */}
       <button
         type="button"
         onClick={onToggle}
-        className="flex items-center justify-center gap-2 border-t border-(--color-sidebar-border) py-3 text-(--color-sidebar-text-muted) transition-colors hover:bg-(--color-sidebar-hover) hover:text-white"
+        className="hidden items-center justify-center gap-2 border-t border-(--color-sidebar-border) py-3 text-(--color-sidebar-text-muted) transition-colors hover:bg-(--color-sidebar-hover) hover:text-white md:flex"
       >
         {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
         {!collapsed && <span className="text-sm">Collapse</span>}
       </button>
-    </aside>
+      </aside>
+    </>
   );
 }

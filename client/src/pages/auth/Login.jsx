@@ -1,8 +1,38 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { GraduationCap } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { Button, FormField, Input, BrandLogo } from '../../components/common';
+import { Button, FormField, Input } from '../../components/common';
+
+// Same show/hide pattern already used for password fields elsewhere
+// (Super Admin/Trainer Profile's Change Password form) — reused here
+// rather than a new one, so the eye icon looks and behaves identically
+// across the app. Only the password field gets this; email is untouched.
+function PasswordInput({ id, value, onChange, autoComplete, placeholder, required }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <Input
+        id={id}
+        type={visible ? 'text' : 'password'}
+        autoComplete={autoComplete}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        required={required}
+        className="pr-9"
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        className="absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer text-slate-400 hover:text-slate-600"
+        aria-label={visible ? 'Hide password' : 'Show password'}
+      >
+        {visible ? <EyeOff size={15} /> : <Eye size={15} />}
+      </button>
+    </div>
+  );
+}
 
 export default function Login() {
   const { user, login } = useAuth();
@@ -53,16 +83,11 @@ export default function Login() {
     <div className="flex min-h-screen items-center justify-center bg-(--color-app-bg) px-4">
       <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
         <div className="mb-6 flex flex-col items-center text-center">
-          <BrandLogo
-            size={56}
-            className="mb-3"
-            fallback={
-              <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-blue-600">
-                <GraduationCap size={24} />
-              </span>
-            }
-          />
-          <h1 className="text-lg font-semibold text-slate-800">Titan Institute Portal</h1>
+          {/* Same asset as the browser tab favicon (see index.html's
+              <link rel="icon">) so the login page shows the exact same
+              logo the tab does. */}
+          <img src="/favicon-crest.png?v=1" alt="TITAN" className="mb-3 h-14 w-auto object-contain" />
+          <h1 className="text-lg font-semibold text-slate-800">TITAN Institute</h1>
           <p className="mt-1 text-sm text-slate-500">Sign in to manage your institute</p>
         </div>
 
@@ -80,9 +105,8 @@ export default function Login() {
           </FormField>
 
           <FormField label="Password" htmlFor="password" required>
-            <Input
+            <PasswordInput
               id="password"
-              type="password"
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

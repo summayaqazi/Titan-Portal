@@ -53,7 +53,7 @@ export default function AttendanceTab({ batchId }) {
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatPill icon={Users} label="Total Students" value={stats.total} colorClass="bg-blue-50 text-blue-600" />
+        <StatPill icon={Users} label="Total Students" value={stats.total} colorClass="bg-primary-50 text-primary-600" />
         <StatPill icon={UserCheck} label="Present" value={stats.present} colorClass="bg-green-50 text-green-600" />
         <StatPill icon={UserMinus} label="Leave" value={stats.leave} colorClass="bg-amber-50 text-amber-600" />
         <StatPill icon={UserX} label="Absent" value={stats.absent} colorClass="bg-red-50 text-red-600" />
@@ -66,7 +66,7 @@ export default function AttendanceTab({ batchId }) {
       ) : roster.length === 0 ? (
         <EmptyState title="No enrolled students found in this batch" />
       ) : (
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
           <table className="w-full min-w-max text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
