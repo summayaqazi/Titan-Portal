@@ -123,11 +123,22 @@ const DEFAULT_ROLES = [
       payments: { view: true },
       attendance: { view: true },
       profile: { view: true, update: true },
+      // Read-only curriculum progress, same reasoning as attendance above.
+      progress: { view: true },
       // Assignments phase: a student views assignments for their own
       // enrolled batches and creates (submits/resubmits) their own
       // submission — never update/delete, that stays a Trainer-only
       // review action (approve/reject/feedback) via the Trainer Portal.
       assignments: { view: true, create: true },
+      // Quiz phase: a student views quizzes for their own enrolled batches
+      // and creates their own attempts (start + submit) — never
+      // update/delete, quiz authoring stays a Trainer-only action.
+      quizzes: { view: true, create: true },
+      // Feedback phase: a student creates their own feedback (bug/idea/
+      // other) — no 'view' grant, since there's no feedback-history/inbox
+      // UI in this phase for a student to view (create-only is enough for
+      // the Send Feedback workflow).
+      feedback: { create: true },
     }),
   },
 ];

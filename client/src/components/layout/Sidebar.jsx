@@ -1,11 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronLeft, ChevronRight, LogOut, X } from 'lucide-react';
 import { SUPER_ADMIN_NAV, ADMIN_NAV, TRAINER_NAV, STUDENT_NAV } from '../../constants/navigation';
 import { ROLES } from '../../constants/roles';
 import { useAuth } from '../../context/AuthContext';
 import BrandLogo from '../common/BrandLogo';
+import Avatar from '../common/Avatar';
 import { resolveFileUrl } from '../../utils/fileUrl';
+import studentPortalApi from '../../api/studentPortalApi';
 
 function isChildActive(item, pathname) {
   return item.children?.some((child) => pathname.startsWith(child.path));
@@ -28,6 +30,32 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onClo
       ? STUDENT_NAV
       : SUPER_ADMIN_NAV;
   const isTrainer = user?.role === ROLES.TRAINER;
+  const isStudent = user?.role === ROLES.STUDENT;
+
+  // The student's real uploaded photo lives on the Student model
+  // (`profilePicture`, set via PUT /student/me/profile — the same drawer
+  // the Profile page uses), not on the shared User object `useAuth()`
+  // exposes here (that only ever carries the User model's own `avatar`
+  // field, which the Student portal never writes to). Fetched once via the
+  // existing GET /student/me/profile — no new endpoint — and only for
+  // Student, so Super Admin/Admin/Trainer never make this call.
+  const [studentPicture, setStudentPicture] = useState(null);
+  useEffect(() => {
+    if (!isStudent) return;
+    let cancelled = false;
+    studentPortalApi
+      .getMyProfile()
+      .then((data) => {
+        if (!cancelled) setStudentPicture(data?.profilePicture || null);
+      })
+      .catch(() => {
+        // Avatar already falls back to initials/a generic icon without
+        // this — sidebar chrome shouldn't break over it.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isStudent]);
 
   const handleLogout = () => {
     logout();
@@ -222,6 +250,47 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onClo
               >
                 <LogOut size={16} />
               </button>
+            )}
+          </div>
+          {collapsed && (
+            <button
+              type="button"
+              onClick={handleLogout}
+              title="Logout"
+              className="mt-1.5 flex w-full items-center justify-center rounded-md p-1.5 text-(--color-sidebar-text-muted) transition-colors hover:bg-(--color-sidebar-hover) hover:text-white"
+            >
+              <LogOut size={16} />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Student-only: avatar + name + Logout — not a NavLink-wrapped profile
+          card like Trainer's (STUDENT_NAV already has its own "Profile"
+          entry above, so linking the avatar there too would be redundant).
+          The shared Avatar component handles the real photo / initials /
+          generic-icon fallback chain (never a broken image) — same
+          component Profile.jsx already uses, so this reads identically
+          there and here. Also still what lets the Header's avatar/Logout
+          dropdown stay removed on the Student Dashboard (matching
+          Trainer's header-less layout) without losing the ability to log
+          out. Super Admin/Admin/Trainer never render this block. */}
+      {isStudent && (
+        <div className="border-t border-(--color-sidebar-border) p-3">
+          <div className={`flex items-center gap-2.5 ${collapsed ? 'justify-center' : ''}`}>
+            <Avatar src={resolveFileUrl(studentPicture)} name={user?.name} size={36} className="shrink-0" />
+            {!collapsed && (
+              <>
+                <p className="min-w-0 flex-1 truncate text-sm font-medium text-white">{user?.name}</p>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  title="Logout"
+                  className="shrink-0 rounded-md p-1.5 text-(--color-sidebar-text-muted) transition-colors hover:bg-(--color-sidebar-hover) hover:text-white"
+                >
+                  <LogOut size={16} />
+                </button>
+              </>
             )}
           </div>
           {collapsed && (

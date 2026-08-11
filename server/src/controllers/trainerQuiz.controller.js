@@ -245,4 +245,10 @@ module.exports = {
   addQuestion,
   updateQuestion,
   deleteQuestion,
+  // Exported so studentPortal.controller.js can lazily flip an overdue
+  // 'scheduled' quiz to 'published' the same way the Trainer Portal already
+  // does, instead of a second implementation that could drift from this
+  // one. Purely additive — every existing caller of this module is
+  // unaffected.
+  syncSchedule,
 };

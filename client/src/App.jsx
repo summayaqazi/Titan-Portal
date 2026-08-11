@@ -37,7 +37,14 @@ import TrainerProfile from './pages/trainer/Profile';
 import TrainerCourseWorkspace from './pages/trainer/CourseWorkspace';
 
 import StudentDashboard from './pages/student/Dashboard';
+import StudentProgress from './pages/student/Progress';
+import StudentAttendance from './pages/student/Attendance';
+import StudentPayments from './pages/student/Payments';
 import StudentAssignments from './pages/student/Assignments';
+import StudentCourseDetails from './pages/student/CourseDetails';
+import StudentProfile from './pages/student/Profile';
+import StudentQuiz from './pages/student/Quiz';
+import StudentTakeQuiz from './pages/student/TakeQuiz';
 
 // Each Super Admin / Admin page sits behind its own RoleRoute with a
 // `module` key so permission edits made on the Roles & Permissions page are
@@ -138,13 +145,26 @@ export default function App() {
             {/* Student Portal — reuses SuperAdminLayout exactly like Admin
                 and Trainer do (Sidebar/Header branch on user.role
                 internally, no new layout component needed). Phase 1
-                (Dashboard) is done; Phase 2 (Assignments) follows the exact
-                same incremental approach the Trainer Portal used. */}
+                (Dashboard), Phase 2 (Assignments), Phase 3 (Progress,
+                Attendance), Phase 4 (Payments), Phase 5 (Quiz + take-quiz,
+                server-graded attempts), Phase 6 (Course Details —
+                courses/:enrollmentId, gated on the 'dashboard' module like
+                Trainer's own courses/:batchId Course Workspace route
+                above), and Phase 7 (Profile + Edit Profile) each follow
+                the exact same incremental approach the Trainer Portal
+                used. */}
             <Route element={<RoleRoute allowedRoles={[ROLES.STUDENT]} />}>
               <Route path="/student" element={<SuperAdminLayout />}>
                 <Route index element={<Navigate to="dashboard" replace />} />
                 {studentModuleRoute('dashboard', 'dashboard', <StudentDashboard />)}
+                {studentModuleRoute('dashboard', 'courses/:enrollmentId', <StudentCourseDetails />)}
+                {studentModuleRoute('progress', 'progress', <StudentProgress />)}
+                {studentModuleRoute('attendance', 'attendance', <StudentAttendance />)}
+                {studentModuleRoute('payments', 'payments', <StudentPayments />)}
                 {studentModuleRoute('assignments', 'assignments', <StudentAssignments />)}
+                {studentModuleRoute('quizzes', 'quizzes', <StudentQuiz />)}
+                {studentModuleRoute('quizzes', 'quizzes/:quizId/take', <StudentTakeQuiz />)}
+                {studentModuleRoute('profile', 'profile', <StudentProfile />)}
               </Route>
             </Route>
           </Route>

@@ -221,4 +221,9 @@ module.exports = {
   updateTopic,
   toggleTopic,
   deleteTopic,
+  // Exported so studentPortal.controller.js can derive the exact same
+  // module/topic percentages for a student's own read-only Progress view,
+  // instead of a second implementation that could drift from this one.
+  // Purely additive — every existing caller of this module is unaffected.
+  withComputed,
 };

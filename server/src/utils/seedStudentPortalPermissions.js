@@ -1,7 +1,8 @@
 // Fixes up the STUDENT role's permissions for modules introduced *after*
 // its Role document already existed — flips specific view/create flags to
-// true so each Student Portal phase (Dashboard, then Assignments) is
-// actually reachable. Needed as a one-off, separate from seed.js's normal
+// true so each Student Portal phase (Dashboard, then Assignments, then
+// Progress/Attendance, then Quiz, then Feedback, ...) is actually
+// reachable. Needed as a one-off, separate from seed.js's normal
 // seedRoles() backfill: that backfill only ever ADDS module entries that
 // are entirely missing from a role's permissions array (so it never
 // clobbers a real admin customization) — but the STUDENT role's Role
@@ -23,6 +24,14 @@ const { ROLES } = require('./constants');
 const FIXUPS = {
   dashboard: { view: true },
   assignments: { view: true, create: true },
+  // Phase 3 — Progress and Attendance are both read-only for students.
+  progress: { view: true },
+  attendance: { view: true },
+  // Phase 5 — Quiz: view own quizzes/results, create own attempts
+  // (start + submit). No update/delete — quiz authoring stays Trainer-only.
+  quizzes: { view: true, create: true },
+  // Phase 8 — Feedback: create-only (no history/inbox view in this phase).
+  feedback: { create: true },
 };
 
 const run = async () => {

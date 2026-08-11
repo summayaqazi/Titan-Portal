@@ -14,6 +14,8 @@ module.exports = {
   Assignment: require('./Assignment'),
   Submission: require('./Submission'),
   Quiz: require('./Quiz'),
+  QuizAttempt: require('./QuizAttempt'),
+  Feedback: require('./Feedback'),
   CourseProgress: require('./CourseProgress'),
   Role: require('./Role'),
   Counter: require('./Counter'),

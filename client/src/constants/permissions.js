@@ -17,6 +17,7 @@ export const PERMISSION_MODULES = [
   'assignments',
   'quizzes',
   'progress',
+  'feedback',
 ];
 
 export const PERMISSION_ACTIONS = ['view', 'create', 'update', 'delete', 'export'];
@@ -39,4 +40,5 @@ export const MODULE_LABELS = {
   assignments: 'Assignments',
   quizzes: 'Quizzes',
   progress: 'Course Progress',
+  feedback: 'Feedback',
 };
