@@ -12,16 +12,16 @@ export default function Header({ onMenuClick }) {
   // Trainer Portal already has its own profile/avatar + Logout in the
   // sidebar's bottom profile card (see Sidebar.jsx) — this header's
   // profile dropdown would be a duplicate profile/role element for the
-  // same account, so for TRAINER nothing is rendered here at all.
-  // Super Admin/Admin have no other profile entry point, so their
-  // dropdown (avatar, name, Logout) is untouched.
-  const isTrainer = user?.role === ROLES.TRAINER;
-  // Only ever rendered for Super Admin/Admin/Student now (Trainer renders
-  // nothing here — see isTrainer above). Super Admin/Admin use the app's
-  // primary blue; the Student Portal is intentionally out of scope for
-  // that recolor, so its avatar circle keeps Tailwind's original default
-  // blue here, unaffected.
-  const avatarColorClass = user?.role === ROLES.STUDENT ? 'bg-blue-100 text-blue-700' : 'bg-primary-100 text-primary-700';
+  // same account, so for TRAINER nothing is rendered here at all. Student
+  // now gets the same treatment (Sidebar.jsx grew its own bottom Logout
+  // control) so its Dashboard can match Trainer's header-less layout
+  // without losing the ability to log out. Super Admin/Admin have no
+  // other profile entry point, so their dropdown (avatar, name, Logout)
+  // is untouched.
+  const hasSidebarExit = user?.role === ROLES.TRAINER || user?.role === ROLES.STUDENT;
+  // Only ever rendered for Super Admin/Admin now — Trainer/Student render
+  // nothing here (see hasSidebarExit above).
+  const avatarColorClass = 'bg-primary-100 text-primary-700';
 
   const handleLogout = () => {
     logout();
@@ -29,16 +29,16 @@ export default function Header({ onMenuClick }) {
   };
 
   return (
-    // For Trainer this bar renders nothing at all at desktop widths (no
-    // hamburger — that's md:hidden — and the profile dropdown is null, see
-    // above), so it was pure dead space above the page content. Collapsing
-    // it to h-0 there (a real layout change, not a visibility trick) removes
-    // that space outright; every other role keeps the normal h-12 bar
-    // unchanged, and Trainer keeps it too below md, where the hamburger
-    // still needs the room.
+    // For Trainer/Student this bar renders nothing at all at desktop widths
+    // (no hamburger — that's md:hidden — and the profile dropdown is null,
+    // see above), so it was pure dead space above the page content.
+    // Collapsing it to h-0 there (a real layout change, not a visibility
+    // trick) removes that space outright; Super Admin/Admin keep the normal
+    // h-12 bar unchanged, and Trainer/Student keep it too below md, where
+    // the hamburger still needs the room.
     <header
       className={`flex h-12 items-center border-b border-slate-200 bg-white px-3 sm:px-6 ${
-        isTrainer ? 'md:h-0 md:overflow-hidden md:border-0 md:px-0' : ''
+        hasSidebarExit ? 'md:h-0 md:overflow-hidden md:border-0 md:px-0' : ''
       }`}
     >
       <button
@@ -54,7 +54,7 @@ export default function Header({ onMenuClick }) {
           the DOM — with justify-between, hiding that button at md: (its
           only sibling) left this centered/left-aligned on desktop instead
           of at the original top-right. */}
-      {isTrainer ? null : (
+      {hasSidebarExit ? null : (
         <div className="relative ml-auto">
           <button
             type="button"

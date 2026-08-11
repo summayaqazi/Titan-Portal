@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { BookOpen, Calendar as CalendarIcon, FileText, Link2, Upload, AlertTriangle, Download } from 'lucide-react';
-import { PageContainer, EmptyState, StatusBadge, Textarea, Button, Input, MultiFileInput } from '../../components/common';
+import { BookOpen, Calendar as CalendarIcon, FileText, Link2, Upload, AlertTriangle, Download, Info } from 'lucide-react';
+import { PageContainer, EmptyState, StatusBadge, Textarea, Button, Input, MultiFileInput, Modal } from '../../components/common';
 import studentPortalApi from '../../api/studentPortalApi';
 import { getErrorMessage } from '../../utils/errors';
 import { resolveFileUrl } from '../../utils/fileUrl';
@@ -108,7 +108,84 @@ function FileList({ files, emptyText }) {
   );
 }
 
-function AssignmentCard({ assignment, onSubmitted }) {
+// Read-only "Assignment Information" detail view — title/due date/grade/
+// reference links/description, the same fields the card used to show
+// inline, now behind an on-demand modal instead of always-expanded per
+// card (this is what actually keeps the list itself compact). Submission
+// (form, files, feedback, resubmit) stays exactly where it already was, on
+// the card — this modal never touches that.
+function AssignmentDetailModal({ assignment, onClose }) {
+  if (!assignment) return null;
+  const deadlineLabel = formatDeadline(assignment.dueDate);
+  const referenceFiles = [...(assignment.referenceImages || []), ...(assignment.attachments || [])];
+
+  return (
+    <Modal open onClose={onClose} title="Assignment Information" size="xl">
+      <div className="space-y-5">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Title</p>
+          <p className="mt-1 text-base font-semibold text-slate-800">{assignment.title || 'Not provided'}</p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">
+              <CalendarIcon size={13} /> Due Date
+            </p>
+            <p className={`mt-1 text-sm font-medium ${assignment.expired ? 'text-red-600' : 'text-slate-700'}`}>
+              {deadlineLabel || 'Not provided'}
+              {assignment.expired ? ' (expired)' : ''}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Grade</p>
+            <div className="mt-1.5">
+              {/* "Not Submitted" is UI copy for the absence of a submission,
+                  not a fabricated API status — real submission statuses
+                  (pending/approved/rejected) still render via StatusBadge
+                  exactly as the API returns them. */}
+              <StatusBadge status={assignment.submission ? assignment.submission.status : 'Not Submitted'} />
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Reference Links</p>
+          {assignment.referenceLinks?.length > 0 ? (
+            <ul className="mt-1.5 space-y-1.5">
+              {assignment.referenceLinks.map((link) => (
+                <li key={link} className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm">
+                  <Link2 size={14} className="mt-0.5 shrink-0 text-primary-600" />
+                  <a href={link} target="_blank" rel="noopener noreferrer" className="break-all text-primary-600 hover:underline">
+                    {link}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-sm text-slate-400">Not provided</p>
+          )}
+        </div>
+
+        {referenceFiles.length > 0 && (
+          <div>
+            <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">Reference Material</p>
+            <FileList files={referenceFiles} />
+          </div>
+        )}
+
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Description</p>
+          <div className="mt-1.5 rounded-lg bg-slate-50 p-3.5">
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{assignment.description || 'Not provided'}</p>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function AssignmentCard({ assignment, onSubmitted, onView }) {
   const [description, setDescription] = useState('');
   const [links, setLinks] = useState([]);
   const [files, setFiles] = useState([]);
@@ -118,7 +195,6 @@ function AssignmentCard({ assignment, onSubmitted }) {
 
   const { submission, expired, dueDate } = assignment;
   const deadlineLabel = formatDeadline(dueDate);
-  const referenceFiles = [...(assignment.referenceImages || []), ...(assignment.attachments || [])];
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -144,36 +220,24 @@ function AssignmentCard({ assignment, onSubmitted }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-base font-semibold text-slate-800">{assignment.title}</p>
+        <button type="button" onClick={() => onView(assignment)} className="min-w-0 text-left">
+          <p className="text-base font-semibold text-slate-800 hover:text-primary-700 hover:underline">{assignment.title}</p>
           <p className="mt-0.5 truncate text-xs text-slate-400">
             {assignment.courseName} · {assignment.batchCode}
             {assignment.topic ? ` · ${assignment.topic}` : ''}
           </p>
+        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {submission && <StatusBadge status={submission.status} />}
+          <button
+            type="button"
+            onClick={() => onView(assignment)}
+            className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+          >
+            <Info size={12} /> View
+          </button>
         </div>
-        {submission && <StatusBadge status={submission.status} />}
       </div>
-
-      {assignment.description && <p className="mt-3 whitespace-pre-wrap text-sm text-slate-600">{assignment.description}</p>}
-
-      {(assignment.referenceLinks?.length > 0 || referenceFiles.length > 0) && (
-        <div className="mt-3">
-          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">Reference Material</p>
-          {assignment.referenceLinks?.length > 0 && (
-            <ul className="mb-1 space-y-1">
-              {assignment.referenceLinks.map((link) => (
-                <li key={link} className="flex items-center gap-1.5 text-xs text-primary-600">
-                  <Link2 size={12} />
-                  <a href={link} target="_blank" rel="noreferrer" className="truncate hover:underline">
-                    {link}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
-          <FileList files={referenceFiles} />
-        </div>
-      )}
 
       <div className="mt-4 flex items-center gap-1.5 border-t border-slate-100 pt-3 text-xs font-medium">
         {expired ? <AlertTriangle size={13} className="text-red-600" /> : <CalendarIcon size={13} className="text-slate-400" />}
@@ -241,6 +305,9 @@ export default function Assignments() {
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // Single shared instance for the whole list (not one modal per card) —
+  // holds the assignment currently being viewed, or null when closed.
+  const [viewingAssignment, setViewingAssignment] = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -269,10 +336,12 @@ export default function Assignments() {
       ) : (
         <div className="space-y-4">
           {assignments.map((a) => (
-            <AssignmentCard key={a._id} assignment={a} onSubmitted={load} />
+            <AssignmentCard key={a._id} assignment={a} onSubmitted={load} onView={setViewingAssignment} />
           ))}
         </div>
       )}
+
+      <AssignmentDetailModal assignment={viewingAssignment} onClose={() => setViewingAssignment(null)} />
     </PageContainer>
   );
 }

@@ -296,4 +296,10 @@ module.exports = {
   lookupByRollNumber,
   getRecentActivity,
   getEnrollmentSummary,
+  // Exported so studentPortal.controller.js can reuse the exact same
+  // total/present/absent/leave/percent computation for the student's own
+  // attendance overview, instead of a second implementation that could
+  // drift from this one. Purely additive — every existing caller of this
+  // module is unaffected.
+  summarizeAttendance,
 };

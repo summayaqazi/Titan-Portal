@@ -10,6 +10,11 @@ export default function Modal({ open, onClose, title, children, footer, size = '
     sm: 'max-w-sm',
     md: 'max-w-lg',
     lg: 'max-w-2xl',
+    // Added for the Student Assignment "Assignment Information" detail
+    // modal (~760-800px on desktop) — purely additive, every existing
+    // caller keeps passing its own sm/md/lg (or the 'md' default)
+    // unchanged.
+    xl: 'max-w-3xl',
   }[size];
 
   return (

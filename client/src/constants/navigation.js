@@ -11,6 +11,8 @@ import {
   KeyRound,
   UserCircle,
   ClipboardList,
+  TrendingUp,
+  FileQuestion,
 } from 'lucide-react';
 
 // Sidebar navigation for the Super Admin portal.
@@ -93,12 +95,22 @@ export const TRAINER_NAV = [
 ];
 
 // Student Portal — Phase 1 (Dashboard) is done; Assignments (view + submit,
-// server-enforced deadlines) is Phase 2. More entries (Courses, Attendance,
-// Payments, ...) land in later phases as their pages ship, following the
-// exact same incremental approach TRAINER_NAV above did.
+// server-enforced deadlines) is Phase 2; Progress and Attendance (both
+// read-only) are Phase 3; Payments (read-only) is Phase 4; Quiz + take-quiz
+// (server-graded attempts) is Phase 5; Course Details (Phase 6) is a
+// Dashboard drill-down, not its own nav entry; Profile + Edit Profile is
+// Phase 7 — a trailing nav item here, same placement as SUPER_ADMIN_NAV/
+// ADMIN_NAV's own Profile entries (Student has no Trainer-style bottom
+// sidebar profile card — the Header's own dropdown already covers
+// avatar/name/Logout for this role, same as Super Admin/Admin).
 export const STUDENT_NAV = [
   { label: 'Dashboard', path: '/student/dashboard', icon: LayoutDashboard, module: 'dashboard' },
+  { label: 'Progress', path: '/student/progress', icon: TrendingUp, module: 'progress' },
+  { label: 'Attendance', path: '/student/attendance', icon: CalendarCheck, module: 'attendance' },
+  { label: 'Payments', path: '/student/payments', icon: Wallet, module: 'payments' },
   { label: 'Assignments', path: '/student/assignments', icon: ClipboardList, module: 'assignments' },
+  { label: 'Quiz', path: '/student/quizzes', icon: FileQuestion, module: 'quizzes' },
+  { label: 'Profile', path: '/student/profile', icon: UserCircle, module: 'profile' },
 ];
 
 // Flattens a nav list (including grouped children) down to the set of

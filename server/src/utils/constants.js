@@ -40,6 +40,7 @@ const PERMISSION_MODULES = [
   'assignments',
   'quizzes',
   'progress',
+  'feedback',
 ];
 
 const PERMISSION_ACTIONS = ['view', 'create', 'update', 'delete', 'export'];
