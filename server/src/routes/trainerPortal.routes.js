@@ -39,6 +39,7 @@ const {
   addQuestion,
   updateQuestion,
   deleteQuestion,
+  getQuizProgress,
 } = require('../controllers/trainerQuiz.controller');
 const {
   getProgress,
@@ -144,6 +145,12 @@ router.put('/me/quizzes/:quizId/unpublish', checkPermission('quizzes', 'update')
 router.post('/me/quizzes/:quizId/questions', checkPermission('quizzes', 'update'), requireOwnQuiz, addQuestion);
 router.put('/me/quizzes/:quizId/questions/:questionId', checkPermission('quizzes', 'update'), requireOwnQuiz, updateQuestion);
 router.delete('/me/quizzes/:quizId/questions/:questionId', checkPermission('quizzes', 'update'), requireOwnQuiz, deleteQuestion);
+
+// Student-wise attempt/progress monitoring for one of this trainer's own
+// quizzes — read-only (view permission only, same as getQuiz above), never
+// exposes a way to edit a student's attempt count from here (no route for
+// that exists anywhere in this file).
+router.get('/me/quizzes/:quizId/progress', checkPermission('quizzes', 'view'), requireOwnQuiz, getQuizProgress);
 
 // Course Progress — one curriculum (modules -> topics) per batch. Module/
 // topic level routes aren't nested under :batchId (they're addressed by

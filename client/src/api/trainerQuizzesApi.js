@@ -22,6 +22,9 @@ const trainerQuizzesApi = {
     axiosInstance.put(`/trainer/me/quizzes/${quizId}/questions/${questionId}`, data).then((res) => res.data.data),
   removeQuestion: (quizId, questionId) =>
     axiosInstance.delete(`/trainer/me/quizzes/${quizId}/questions/${questionId}`).then((res) => res.data.data),
+
+  // Student-wise attempt/progress monitoring for one quiz — read-only.
+  getProgress: (quizId) => axiosInstance.get(`/trainer/me/quizzes/${quizId}/progress`).then((res) => res.data.data),
 };
 
 export default trainerQuizzesApi;

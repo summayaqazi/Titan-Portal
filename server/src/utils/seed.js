@@ -121,7 +121,13 @@ const DEFAULT_ROLES = [
       // the Trainer Portal's own Dashboard/Course Workspace routes use.
       dashboard: { view: true },
       payments: { view: true },
-      attendance: { view: true },
+      // view: existing read-only attendance history/summary. create: the
+      // one self-service write — marking today's own attendance by
+      // scanning their own Student ID Card QR (see
+      // markOwnAttendanceViaQr in studentPortal.controller.js). Never
+      // update/delete — an already-marked record can't be changed by the
+      // student, only Trainer/Admin retain that via attendance.controller.js.
+      attendance: { view: true, create: true },
       profile: { view: true, update: true },
       // Read-only curriculum progress, same reasoning as attendance above.
       progress: { view: true },

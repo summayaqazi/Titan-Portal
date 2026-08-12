@@ -35,6 +35,19 @@ const quizSchema = new mongoose.Schema(
     scheduledAt: { type: Date },
     publishedAt: { type: Date },
 
+    // Availability window — independent of the draft/scheduled/published
+    // status above (that controls whether a quiz is live at all;
+    // startAt/endAt control the date/time range a *published* quiz can
+    // actually be attempted within). Both optional so every quiz that
+    // existed before this field was added keeps its old "no time limit
+    // once published" behavior — only quizzes a trainer explicitly sets
+    // these on get the new start/end enforcement. Server/DB time (`Date.now`
+    // via `new Date()`) is always what's compared against, never a
+    // client-supplied timestamp — see startQuizAttempt/getQuizAvailability
+    // in studentPortal.controller.js.
+    startAt: { type: Date },
+    endAt: { type: Date },
+
     course: { type: mongoose.Schema.Types.ObjectId, ref: 'Course', required: true },
     batch: { type: mongoose.Schema.Types.ObjectId, ref: 'Batch', required: true },
     trainer: { type: mongoose.Schema.Types.ObjectId, ref: 'Trainer', required: true, index: true },

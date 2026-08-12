@@ -16,6 +16,7 @@ const STATUS_STYLES = {
   leave: 'bg-amber-100 text-amber-700',
   late: 'bg-amber-100 text-amber-700',
   scheduled: 'bg-amber-100 text-amber-700',
+  'in-progress': 'bg-amber-100 text-amber-700',
   // reds
   rejected: 'bg-red-100 text-red-700',
   failed: 'bg-red-100 text-red-700',
@@ -26,6 +27,7 @@ const STATUS_STYLES = {
   overdue: 'bg-red-100 text-red-700',
   absent: 'bg-red-100 text-red-700',
   inactive: 'bg-red-100 text-red-700',
+  expired: 'bg-red-100 text-red-700',
   // neutrals
   refunded: 'bg-slate-100 text-slate-600',
   waived: 'bg-slate-100 text-slate-600',

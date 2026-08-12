@@ -62,6 +62,25 @@ function QuizInfoModal({ quizId, onClose }) {
             {info.description && <p className="mt-2 text-sm text-slate-600">{info.description}</p>}
           </div>
 
+          <div
+            className={`rounded-lg px-3 py-2 text-sm font-medium ${
+              info.availability === 'available'
+                ? 'bg-green-50 text-green-700'
+                : info.availability === 'expired'
+                ? 'bg-red-50 text-red-600'
+                : 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            {info.availabilityMessage}
+            {(info.startAt || info.endAt) && (
+              <span className="ml-1 font-normal text-xs opacity-80">
+                {info.startAt && `Opens ${new Date(info.startAt).toLocaleString()}`}
+                {info.startAt && info.endAt && ' · '}
+                {info.endAt && `Closes ${new Date(info.endAt).toLocaleString()}`}
+              </span>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3 text-sm sm:grid-cols-3">
             <div>
               <p className="text-xs text-slate-400">Questions</p>
@@ -81,11 +100,11 @@ function QuizInfoModal({ quizId, onClose }) {
             </div>
             <div>
               <p className="text-xs text-slate-400">Allowed Attempts</p>
-              <p className="font-medium text-slate-700">Unlimited</p>
+              <p className="font-medium text-slate-700">{info.maxAttempts}</p>
             </div>
             <div>
-              <p className="text-xs text-slate-400">Your Attempts</p>
-              <p className="font-medium text-slate-700">{info.attempts.filter((a) => a.status !== 'in-progress').length}</p>
+              <p className="text-xs text-slate-400">Attempts Remaining</p>
+              <p className="font-medium text-slate-700">{info.attemptsRemaining}</p>
             </div>
           </div>
 
@@ -147,11 +166,46 @@ export default function Quiz() {
     };
   }, []);
 
+  // `row.canResume` is the server's own explicit, already-reconciled
+  // verdict (see canResumeAttempt in quizGrading.js) — trusted as-is here
+  // instead of this component re-deriving "is it resumable" from
+  // `row.status === 'in-progress'` on its own. That inference used to be
+  // wrong whenever the latest attempt was actually done/expired but the
+  // read that would have reconciled it hadn't happened yet (or, before
+  // computeAttemptDeadline's own fix, a zero-duration quiz whose attempt
+  // could never expire at all) — trusting one server-computed flag removes
+  // that whole class of drift. Real enforcement is still server-side
+  // regardless of what this renders — a student who bypasses this button
+  // entirely (e.g. hitting the API directly) still gets the exact same
+  // block from startQuizAttempt.
   const actionFor = (row) => {
-    const label = row.status === 'pending' ? 'Start' : row.status === 'in-progress' ? 'Resume' : 'Retake';
-    const Icon = row.status === 'in-progress' ? Play : row.status === 'pending' ? Play : RotateCcw;
+    if (row.canResume) {
+      return (
+        <Button variant="primary" onClick={() => navigate(`/student/quizzes/${row._id}/take`)}>
+          <Play size={14} /> Resume
+        </Button>
+      );
+    }
+
+    // Not resumable — either never attempted, or the latest attempt is
+    // genuinely finished/expired. Once attempts are exhausted (2/2), this
+    // always falls through to the "both attempts used" message below,
+    // never a button — the quiz's completed/result state (row.status,
+    // score/percentage columns) is what represents it now, not an action.
+    if (row.availability === 'not-started') {
+      return <span className="text-xs text-slate-400">{row.availabilityMessage}</span>;
+    }
+    if (row.availability === 'expired') {
+      return <span className="text-xs text-red-500">{row.availabilityMessage}</span>;
+    }
+    if (row.attemptsRemaining <= 0) {
+      return <span className="text-xs text-slate-400">You have used both attempts for this quiz.</span>;
+    }
+
+    const label = row.status === 'pending' ? 'Start' : 'Retake';
+    const Icon = row.status === 'pending' ? Play : RotateCcw;
     return (
-      <Button variant={row.status === 'in-progress' ? 'primary' : 'secondary'} onClick={() => navigate(`/student/quizzes/${row._id}/take`)}>
+      <Button variant="secondary" onClick={() => navigate(`/student/quizzes/${row._id}/take`)}>
         <Icon size={14} /> {label}
       </Button>
     );
@@ -172,7 +226,11 @@ export default function Quiz() {
             { key: 'courseName', header: 'Course', render: (row) => row.courseName || '—' },
             { key: 'title', header: 'Title' },
             { key: 'totalQuestions', header: 'Questions' },
-            { key: 'attemptsCount', header: 'Attempts' },
+            {
+              key: 'attemptsCount',
+              header: 'Attempts',
+              render: (row) => `${row.attemptsUsed}/${row.maxAttempts}`,
+            },
             {
               key: 'score',
               header: 'Score',
