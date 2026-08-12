@@ -103,7 +103,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onClo
           rendered on md+ (desktop sidebar is static, not an overlay). */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-30 bg-slate-900/50 md:hidden"
+          className="fixed inset-0 z-30 cursor-pointer bg-slate-900/50 md:hidden"
           onClick={onCloseMobile}
           aria-hidden="true"
         />

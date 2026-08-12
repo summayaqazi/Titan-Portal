@@ -1,32 +1,30 @@
 import QRCode from 'qrcode';
 import { resolveFileUrl } from './fileUrl';
 
-// Renders the logged-in Trainer's ID card(s) entirely on an offscreen
-// <canvas> and downloads them as PNGs. Canvas (not html2canvas over the
-// live DOM) is used deliberately: it can't produce a half-rendered/blank
-// capture from a slow-loading image or web font, every asset (photo, QR,
-// crest) is loaded and confirmed *before* a single pixel is drawn, and a
-// failed/missing photo falls back to an initials avatar instead of ever
-// leaving a broken image on the card. Colors below mirror the app's
-// primary-* palette (client/src/index.css) so the card matches the rest of
-// the UI.
+// Renders the logged-in Student's ID card(s) entirely on an offscreen
+// <canvas> and downloads them as PNGs — same rendering approach and exact
+// same visual language as utils/trainerIdCard.js (colors, layout, QR
+// placement) so the two cards read as a matching pair from the same
+// institute; deliberately duplicated rather than shared, matching this
+// codebase's existing precedent of small per-portal files over a forced
+// shared abstraction across the Trainer/Student portal boundary.
 //
 // Card is portrait/vertical (not the old landscape layout) and one
-// separate card is generated per assigned course — a trainer assigned to
-// two courses downloads two PNGs, each carrying that course's own
-// name/code, not a single card listing every course.
+// separate card is generated per enrolled course — a student enrolled in
+// two courses downloads two PNGs, each carrying that course's own roll
+// number/batch, not a single card listing every course.
 const COLORS = {
-  headerFrom: '#1a4f7a', // primary-800
-  headerTo: '#2877b9', // primary-600
-  text: '#1e293b', // slate-800
-  subtext: '#64748b', // slate-500
-  faint: '#94a3b8', // slate-400
-  badgeBg: '#f2f8fc', // primary-50
-  badgeText: '#216297', // primary-700
-  ring: '#2877b9', // primary-600
-  border: '#e2e8f0', // slate-200
-  avatarBg: '#e2eef9', // primary-100
-  avatarText: '#216297', // primary-700
+  headerFrom: '#1a4f7a',
+  headerTo: '#2877b9',
+  text: '#1e293b',
+  subtext: '#64748b',
+  faint: '#94a3b8',
+  badgeBg: '#f2f8fc',
+  badgeText: '#216297',
+  ring: '#2877b9',
+  border: '#e2e8f0',
+  avatarBg: '#e2eef9',
+  avatarText: '#216297',
 };
 
 // Card geometry — width is fixed (a real portrait ID card's proportions);
@@ -34,9 +32,8 @@ const COLORS = {
 // canvas to measure how tall the content actually is (see
 // renderCardToBlob), then re-rendered for real at that exact height. That
 // is what keeps every card fitting its own portrait canvas precisely,
-// however many detail rows/lines it ends up needing (course code, campus
-// list, optional qualification), with nothing ever clipped or leaving dead
-// space.
+// however many detail rows/lines it ends up needing, with nothing ever
+// clipped or leaving dead space.
 const CARD_WIDTH = 380;
 const CARD_SCALE = 2;
 const CARD_PADDING = 18;
@@ -85,9 +82,6 @@ function drawImageCover(ctx, img, x, y, w, h) {
   ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
 }
 
-// Same "image if present, else initials" rule as the shared Avatar
-// component (client/src/components/common/Avatar.jsx) — a trainer without
-// a photo yet never gets a random/default picture or a broken-image icon.
 function drawAvatar(ctx, img, name, cx, cy, r) {
   ctx.save();
   ctx.beginPath();
@@ -114,9 +108,6 @@ function drawAvatar(ctx, img, name, cx, cy, r) {
   ctx.stroke();
 }
 
-// Greedy word-wrap capped at `maxLines`, ellipsizing the final line if the
-// text doesn't fit — so a trainer with an unusually long course/campus name
-// can never stretch or overflow the card.
 function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
   const words = text.split(' ');
   const lines = [];
@@ -162,22 +153,27 @@ function drawCenteredEllipsis(ctx, text, cx, y, maxWidth) {
   ctx.fillText(t, cx, y);
 }
 
-// Builds a small, non-sensitive verification payload — never a password or
-// anything auth-related, per the ID card spec. Trainer-level (not
-// per-course), so it's generated once and reused across every course card
-// below.
-function buildQrPayload(user, trainerProfile) {
-  const lines = [
-    'TITAN Institute — Trainer ID',
-    `Name: ${user?.name || ''}`,
-    `Employee ID: ${trainerProfile?.employeeId || ''}`,
-    `Trainer Ref: ${trainerProfile?.trainerId || ''}`,
-  ];
-  return lines.join('\n');
+// The QR payload — small, structured JSON (not the freeform display text
+// the Trainer card uses, since THIS QR is actually parsed back
+// programmatically by markOwnAttendanceViaQr in
+// studentPortal.controller.js). `type` must exactly match STUDENT_QR_TYPE
+// there. Never anything sensitive (no password/token) — just enough for the
+// server to confirm "this card belongs to the student currently scanning
+// it", the same non-auth-payload spirit the Trainer card's own comment
+// documents. Student-level (not per-course), so it's generated once and
+// reused across every course card below.
+const STUDENT_QR_TYPE = 'titan-student-id-card';
+
+function buildQrPayload(profile) {
+  return JSON.stringify({
+    type: STUDENT_QR_TYPE,
+    studentId: profile.studentId,
+    name: profile.name,
+  });
 }
 
 function sanitizeFileName(value) {
-  return (value || 'trainer').replace(/[^a-z0-9-_]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  return (value || 'student').replace(/[^a-z0-9-_]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
 }
 
 // Draws the full card top-to-bottom into `ctx` and returns the Y-coordinate
@@ -188,7 +184,7 @@ function sanitizeFileName(value) {
 // the result to actually produce the PNG. Because the draw calls are the
 // same both times, the measured height and the real card always agree —
 // nothing is ever clipped and there's never dead space at the bottom.
-function drawTrainerCard(ctx, { width, height, drawBackground }, { avatarImg, crestImg, qrImg, user, trainerProfile, course }) {
+function drawStudentCard(ctx, { width, height, drawBackground }, { avatarImg, crestImg, qrImg, profile, enrollment }) {
   if (drawBackground) {
     ctx.save();
     roundedRectPath(ctx, 0, 0, width, height, 16);
@@ -214,16 +210,14 @@ function drawTrainerCard(ctx, { width, height, drawBackground }, { avatarImg, cr
   ctx.fillText('TITAN INSTITUTE', centerX, 14 + crestSize + 18);
   ctx.fillStyle = '#e2eef9';
   ctx.font = '600 10px Arial, sans-serif';
-  ctx.fillText('TRAINER IDENTIFICATION CARD', centerX, 14 + crestSize + 32);
+  ctx.fillText('STUDENT IDENTIFICATION CARD', centerX, 14 + crestSize + 32);
 
-  // Photo
   const photoCX = centerX;
   const photoCY = HEADER_HEIGHT + CARD_PADDING + PHOTO_RADIUS;
-  drawAvatar(ctx, avatarImg, user?.name, photoCX, photoCY, PHOTO_RADIUS);
+  drawAvatar(ctx, avatarImg, profile.name, photoCX, photoCY, PHOTO_RADIUS);
 
-  // Employee ID badge under the photo
   ctx.font = '700 12px Arial, sans-serif';
-  const badgeText = trainerProfile.employeeId || '—';
+  const badgeText = enrollment?.rollNumber || '—';
   const badgeTextWidth = ctx.measureText(badgeText).width;
   const badgeW = badgeTextWidth + 20;
   const badgeH = 22;
@@ -241,11 +235,11 @@ function drawTrainerCard(ctx, { width, height, drawBackground }, { avatarImg, cr
   ctx.fillStyle = COLORS.text;
   ctx.font = '700 19px Arial, sans-serif';
   ctx.textAlign = 'center';
-  drawCenteredEllipsis(ctx, user?.name || 'Trainer', photoCX, cursorY, width - CARD_PADDING * 2);
+  drawCenteredEllipsis(ctx, profile.name || 'Student', photoCX, cursorY, width - CARD_PADDING * 2);
   cursorY += 8;
 
   ctx.font = '700 10px Arial, sans-serif';
-  const tag = 'TRAINER';
+  const tag = 'STUDENT';
   const tagW = ctx.measureText(tag).width + 16;
   roundedRectPath(ctx, photoCX - tagW / 2, cursorY, tagW, 18, 9);
   ctx.fillStyle = COLORS.badgeBg;
@@ -262,10 +256,6 @@ function drawTrainerCard(ctx, { width, height, drawBackground }, { avatarImg, cr
   ctx.stroke();
   cursorY += 18;
 
-  // Detail rows: this course, its code, the trainer's assigned campus(es)
-  // (campuses aren't mapped per-course in the data model, so this stays
-  // the trainer's full campus list on every one of their course cards,
-  // same as it was on the single combined card), then qualification if set.
   ctx.textAlign = 'left';
   const colX = CARD_PADDING;
   const colMaxWidth = width - CARD_PADDING * 2;
@@ -280,21 +270,13 @@ function drawTrainerCard(ctx, { width, height, drawBackground }, { avatarImg, cr
     cursorY += 12;
   };
 
-  // Email is deliberately never shown on the card — course/employee
-  // details only.
-  detailRow('Course', course?.name || 'Not assigned yet');
-  if (course?.code) detailRow('Course Code', course.code);
-
-  const campusNames = (trainerProfile.campuses || []).map((c) => c.name).filter(Boolean);
-  detailRow('Campus', campusNames.length ? campusNames.join(', ') : '—');
-
-  if (trainerProfile.qualification) {
-    detailRow('Qualification', trainerProfile.qualification);
-  }
+  // Email is deliberately never shown on the card — course/roll details
+  // only.
+  detailRow('Course', enrollment?.courseName || 'Not enrolled yet');
+  if (enrollment) detailRow('Batch', enrollment.batchCode || '—');
 
   cursorY += 4;
 
-  // QR code
   const qrSize = 116;
   const qrX = photoCX - qrSize / 2;
   const qrY = cursorY;
@@ -307,11 +289,10 @@ function drawTrainerCard(ctx, { width, height, drawBackground }, { avatarImg, cr
     ctx.fillStyle = COLORS.faint;
     ctx.font = '500 9px Arial, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('Scan to verify', photoCX, cursorY);
+    ctx.fillText('Scan for attendance', photoCX, cursorY);
     cursorY += 18;
   }
 
-  // Footer
   ctx.strokeStyle = COLORS.border;
   ctx.beginPath();
   ctx.moveTo(CARD_PADDING, cursorY);
@@ -326,7 +307,6 @@ function drawTrainerCard(ctx, { width, height, drawBackground }, { avatarImg, cr
 
   if (drawBackground) {
     ctx.restore();
-    // Outer border, drawn after restore() so it sits on top, unclipped.
     roundedRectPath(ctx, 0.5, 0.5, width - 1, height - 1, 16);
     ctx.strokeStyle = COLORS.border;
     ctx.lineWidth = 1;
@@ -370,18 +350,17 @@ function downloadBlob(blob, fileName) {
   URL.revokeObjectURL(blobUrl);
 }
 
-// @param user  The logged-in trainer's user object (AuthContext shape:
-//              name/email/avatar + trainerProfile from /auth/me or /auth/login).
-export async function downloadTrainerIdCard(user) {
-  const trainerProfile = user?.trainerProfile;
-  if (!trainerProfile) {
-    throw new Error('Trainer profile is not available yet.');
+// @param profile  studentPortalApi.getMyProfile()'s own response shape
+//                 (name/email/profilePicture/studentId/enrollments).
+export async function downloadStudentIdCard(profile) {
+  if (!profile?.studentId) {
+    throw new Error('Student profile is not available yet.');
   }
 
   const [avatarImg, crestImg, qrDataUrl] = await Promise.all([
-    loadImage(resolveFileUrl(user?.avatar)),
+    loadImage(resolveFileUrl(profile.profilePicture)),
     loadImage(`/favicon-crest.png?v=1`),
-    QRCode.toDataURL(buildQrPayload(user, trainerProfile), {
+    QRCode.toDataURL(buildQrPayload(profile), {
       margin: 1,
       width: 240,
       color: { dark: COLORS.headerFrom, light: '#ffffff' },
@@ -389,23 +368,23 @@ export async function downloadTrainerIdCard(user) {
   ]);
   const qrImg = await loadImage(qrDataUrl);
 
-  // One card per assigned course — a trainer assigned to more than one
+  // One card per enrolled course — a student enrolled in more than one
   // course downloads one separate, correctly-labeled card per course
-  // instead of a single card listing every course. A trainer with no
-  // assigned courses still gets exactly one fallback card (same as the
-  // previous single-card behavior), so `course` is `null` in that case.
-  const courses = trainerProfile.courses?.length ? trainerProfile.courses : [null];
+  // instead of a single card listing every course. A student with no
+  // enrollments still gets exactly one fallback card (same as previous
+  // single-card behavior), so `enrollment` is `null` in that case.
+  const enrollments = profile.enrollments?.length ? profile.enrollments : [null];
 
-  for (let i = 0; i < courses.length; i++) {
-    const course = courses[i];
-    const blob = await renderCardToBlob({ avatarImg, crestImg, qrImg, user, trainerProfile, course }, drawTrainerCard);
-    const suffix = course?.name ? `-${sanitizeFileName(course.name)}` : '';
-    const fileName = `TITAN-Trainer-ID-${sanitizeFileName(trainerProfile.employeeId || user?.name)}${suffix}.png`;
+  for (let i = 0; i < enrollments.length; i++) {
+    const enrollment = enrollments[i];
+    const blob = await renderCardToBlob({ avatarImg, crestImg, qrImg, profile, enrollment }, drawStudentCard);
+    const suffix = enrollment?.courseName ? `-${sanitizeFileName(enrollment.courseName)}` : '';
+    const fileName = `TITAN-Student-ID-${sanitizeFileName(enrollment?.rollNumber || profile.name)}${suffix}.png`;
     downloadBlob(blob, fileName);
     // Stagger multi-file downloads slightly — firing several a[download]
     // clicks in the same tick is what makes browsers start treating the
     // later ones as blocked popups instead of separate downloads.
-    if (i < courses.length - 1) {
+    if (i < enrollments.length - 1) {
       await new Promise((resolve) => setTimeout(resolve, 400));
     }
   }
