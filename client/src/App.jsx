@@ -46,6 +46,11 @@ import StudentProfile from './pages/student/Profile';
 import StudentQuiz from './pages/student/Quiz';
 import StudentTakeQuiz from './pages/student/TakeQuiz';
 
+import PublicCourses from './pages/public/Courses';
+import PublicCourseDetails from './pages/public/CourseDetails';
+import PublicRegister from './pages/public/Register';
+import PublicRegisterSuccess from './pages/public/RegisterSuccess';
+
 // Each Super Admin / Admin page sits behind its own RoleRoute with a
 // `module` key so permission edits made on the Roles & Permissions page are
 // enforced route by route (SUPER_ADMIN's permissions are always all-true, so
@@ -83,6 +88,19 @@ export default function App() {
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<Login />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
+
+          {/* Public course discovery + registration/enrollment flow —
+              unauthenticated on purpose, sits outside ProtectedRoute below.
+              A brand-new visitor with no account yet: Courses -> Course
+              Details -> Enroll Now -> Register -> pending Enrollment ->
+              existing Admin/Super Admin approval workflow -> existing
+              Student Portal login. Nothing under ProtectedRoute is touched
+              by these routes. */}
+          <Route path="/courses" element={<PublicCourses />} />
+          <Route path="/courses/:courseId" element={<PublicCourseDetails />} />
+          <Route path="/register" element={<PublicRegister />} />
+          <Route path="/enroll/:courseId" element={<PublicRegister />} />
+          <Route path="/register/success" element={<PublicRegisterSuccess />} />
 
           <Route element={<ProtectedRoute />}>
             <Route element={<RoleRoute allowedRoles={[ROLES.SUPER_ADMIN]} />}>

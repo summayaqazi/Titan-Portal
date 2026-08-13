@@ -16,12 +16,17 @@ const trainerAttendanceRoutes = require('./trainerAttendance.routes');
 const paymentRoutes = require('./payment.routes');
 const adminUserRoutes = require('./adminUser.routes');
 const roleRoutes = require('./role.routes');
+const publicRoutes = require('./public.routes');
 
 const router = express.Router();
 
 router.get('/health', (req, res) => {
   res.json({ success: true, message: 'API is running' });
 });
+
+// Public course discovery + registration/enrollment flow — the only
+// unauthenticated resource routes in the app. See public.routes.js.
+router.use('/public', publicRoutes);
 
 router.use('/auth', authRoutes);
 router.use('/dashboard', dashboardRoutes);
