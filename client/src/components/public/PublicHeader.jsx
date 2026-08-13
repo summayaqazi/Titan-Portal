@@ -20,6 +20,12 @@ export default function PublicHeader() {
           <Link to="/courses" className="hover:text-primary-700">
             Courses
           </Link>
+          {/* Job Portal Phase 2 — additive sibling link, same treatment as
+              Courses above. Does not change anything about the existing
+              public course/registration flow this header is also used by. */}
+          <Link to="/jobs" className="hover:text-primary-700">
+            Careers
+          </Link>
           <Link
             to="/login"
             className="rounded-md border border-slate-300 px-3 py-1.5 text-slate-700 hover:bg-slate-50"

@@ -17,6 +17,9 @@ const paymentRoutes = require('./payment.routes');
 const adminUserRoutes = require('./adminUser.routes');
 const roleRoutes = require('./role.routes');
 const publicRoutes = require('./public.routes');
+const publicJobRoutes = require('./publicJob.routes');
+const publicApplicantRoutes = require('./publicApplicant.routes');
+const applicantPortalRoutes = require('./applicantPortal.routes');
 
 const router = express.Router();
 
@@ -24,9 +27,24 @@ router.get('/health', (req, res) => {
   res.json({ success: true, message: 'API is running' });
 });
 
-// Public course discovery + registration/enrollment flow — the only
+// Public job browsing (Job Portal Phase 2) — mounted before the general
+// '/public' route below so it's matched first; kept in its own isolated
+// route/controller file (publicJob.routes.js) rather than added to
+// public.routes.js, so the existing public course/registration flow is
+// never touched.
+router.use('/public/jobs', publicJobRoutes);
+
+// Public Applicant account creation (Job Portal Phase 3) — same isolation
+// reasoning as publicJob.routes.js above.
+router.use('/public/applicant', publicApplicantRoutes);
+
+// Public course discovery + registration/enrollment flow — the only other
 // unauthenticated resource routes in the app. See public.routes.js.
 router.use('/public', publicRoutes);
+
+// Logged-in Applicant's own portal (Job Portal Phase 3 — submission only;
+// dashboard/tracking come in a later phase). Mirrors '/student' below.
+router.use('/applicant', applicantPortalRoutes);
 
 router.use('/auth', authRoutes);
 router.use('/dashboard', dashboardRoutes);
