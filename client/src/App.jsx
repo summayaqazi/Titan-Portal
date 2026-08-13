@@ -56,6 +56,11 @@ import PublicJobDetails from './pages/public/JobDetails';
 import PublicJobApply from './pages/public/JobApply';
 import PublicApplicationSuccess from './pages/public/ApplicationSuccess';
 
+import ApplicantDashboard from './pages/applicant/Dashboard';
+import ApplicantApplications from './pages/applicant/Applications';
+import ApplicantApplicationDetails from './pages/applicant/ApplicationDetails';
+import ApplicantProfile from './pages/applicant/Profile';
+
 // Each Super Admin / Admin page sits behind its own RoleRoute with a
 // `module` key so permission edits made on the Roles & Permissions page are
 // enforced route by route (SUPER_ADMIN's permissions are always all-true, so
@@ -83,6 +88,11 @@ function trainerModuleRoute(module, path, element) {
 // Same pattern again for the Student portal.
 function studentModuleRoute(module, path, element) {
   return moduleRoute(module, path, element, [ROLES.STUDENT]);
+}
+
+// Same pattern again for the Applicant Portal (Job Portal Phase 4).
+function applicantModuleRoute(module, path, element) {
+  return moduleRoute(module, path, element, [ROLES.APPLICANT]);
 }
 
 export default function App() {
@@ -200,6 +210,22 @@ export default function App() {
                 {studentModuleRoute('quizzes', 'quizzes', <StudentQuiz />)}
                 {studentModuleRoute('quizzes', 'quizzes/:quizId/take', <StudentTakeQuiz />)}
                 {studentModuleRoute('profile', 'profile', <StudentProfile />)}
+              </Route>
+            </Route>
+
+            {/* Applicant Portal (Job Portal Phase 4) — reuses SuperAdminLayout
+                exactly like Trainer/Student do. Read-only application
+                tracking only: Dashboard, My Applications, Application
+                Details, Profile. No job-management or application-review
+                functionality here — that's a Super Admin concern, a later
+                phase. */}
+            <Route element={<RoleRoute allowedRoles={[ROLES.APPLICANT]} />}>
+              <Route path="/applicant" element={<SuperAdminLayout />}>
+                <Route index element={<Navigate to="dashboard" replace />} />
+                {applicantModuleRoute('applications', 'dashboard', <ApplicantDashboard />)}
+                {applicantModuleRoute('applications', 'applications', <ApplicantApplications />)}
+                {applicantModuleRoute('applications', 'applications/:id', <ApplicantApplicationDetails />)}
+                {applicantModuleRoute('profile', 'profile', <ApplicantProfile />)}
               </Route>
             </Route>
           </Route>

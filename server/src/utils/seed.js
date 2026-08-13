@@ -151,19 +151,24 @@ const DEFAULT_ROLES = [
   {
     // Job Portal — a job applicant's account. Distinct from STUDENT: an
     // applicant only ever sees their own applications, never any academic
-    // (Student/Enrollment) data, and vice versa. No Job Portal routes/UI
-    // exist yet in this phase — this Role document just makes the RBAC
-    // foundation ready ahead of that work, same as every other role here.
+    // (Student/Enrollment) data, and vice versa.
     name: ROLES.APPLICANT,
     label: 'Applicant',
     description: 'Job applicant account. Applies for jobs and views their own application status.',
     isSystem: false,
     permissions: buildPermissions(false, {
       // View/create their own applications only — enforced by ownership
-      // scoping in the (not-yet-built) applicant-portal controller, not by
-      // this permission grid, same convention as STUDENT's own
-      // assignments/quizzes grants above.
+      // scoping in applicantPortal.controller.js, not by this permission
+      // grid, same convention as STUDENT's own assignments/quizzes grants
+      // above. Also gates the Applicant Dashboard and My Applications
+      // pages (Phase 4) — both are just applications views, so they reuse
+      // this module rather than a dedicated 'dashboard' grant, same
+      // reasoning TRAINER_NAV's Calendar entry already documents for
+      // reusing 'dashboard' instead of adding a module of its own.
       applications: { view: true, create: true },
+      // Phase 4 — the read-only Applicant Profile page (Name/Email/Account
+      // status from the existing User record).
+      profile: { view: true },
     }),
   },
 ];

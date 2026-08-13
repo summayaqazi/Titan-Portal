@@ -149,6 +149,8 @@ function defaultRouteForRole(role) {
       return '/trainer';
     case 'STUDENT':
       return '/student';
+    case 'APPLICANT':
+      return '/applicant/dashboard';
     default:
       // Other roles authenticate successfully but have no portal built yet.
       return '/unauthorized';
@@ -165,6 +167,8 @@ function rolePortalPrefix(role) {
       return '/trainer';
     case 'STUDENT':
       return '/student';
+    case 'APPLICANT':
+      return '/applicant';
     default:
       return null;
   }
