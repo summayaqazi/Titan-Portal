@@ -13,6 +13,7 @@ import {
   ClipboardList,
   TrendingUp,
   FileQuestion,
+  Briefcase,
 } from 'lucide-react';
 
 // Sidebar navigation for the Super Admin portal.
@@ -111,6 +112,16 @@ export const STUDENT_NAV = [
   { label: 'Assignments', path: '/student/assignments', icon: ClipboardList, module: 'assignments' },
   { label: 'Quiz', path: '/student/quizzes', icon: FileQuestion, module: 'quizzes' },
   { label: 'Profile', path: '/student/profile', icon: UserCircle, module: 'profile' },
+];
+
+// Applicant Portal (Job Portal Phase 4) — read-only application tracking.
+// Dashboard and My Applications both gate on the 'applications' module
+// (they're both just applications views — see seed.js's own comment on the
+// APPLICANT role for why this doesn't get a dedicated 'dashboard' grant).
+export const APPLICANT_NAV = [
+  { label: 'Dashboard', path: '/applicant/dashboard', icon: LayoutDashboard, module: 'applications' },
+  { label: 'My Applications', path: '/applicant/applications', icon: Briefcase, module: 'applications' },
+  { label: 'Profile', path: '/applicant/profile', icon: UserCircle, module: 'profile' },
 ];
 
 // Flattens a nav list (including grouped children) down to the set of

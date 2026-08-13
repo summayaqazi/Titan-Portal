@@ -15,10 +15,11 @@ export default function Header({ onMenuClick }) {
   // same account, so for TRAINER nothing is rendered here at all. Student
   // now gets the same treatment (Sidebar.jsx grew its own bottom Logout
   // control) so its Dashboard can match Trainer's header-less layout
-  // without losing the ability to log out. Super Admin/Admin have no
-  // other profile entry point, so their dropdown (avatar, name, Logout)
-  // is untouched.
-  const hasSidebarExit = user?.role === ROLES.TRAINER || user?.role === ROLES.STUDENT;
+  // without losing the ability to log out. Applicant (Job Portal Phase 4)
+  // gets the same bottom sidebar card too, same reasoning. Super Admin/
+  // Admin have no other profile entry point, so their dropdown (avatar,
+  // name, Logout) is untouched.
+  const hasSidebarExit = user?.role === ROLES.TRAINER || user?.role === ROLES.STUDENT || user?.role === ROLES.APPLICANT;
   // Only ever rendered for Super Admin/Admin now — Trainer/Student render
   // nothing here (see hasSidebarExit above).
   const avatarColorClass = 'bg-primary-100 text-primary-700';
