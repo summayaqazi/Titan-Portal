@@ -20,6 +20,8 @@ const publicRoutes = require('./public.routes');
 const publicJobRoutes = require('./publicJob.routes');
 const publicApplicantRoutes = require('./publicApplicant.routes');
 const applicantPortalRoutes = require('./applicantPortal.routes');
+const jobRoutes = require('./job.routes');
+const applicationRoutes = require('./application.routes');
 
 const router = express.Router();
 
@@ -42,9 +44,15 @@ router.use('/public/applicant', publicApplicantRoutes);
 // unauthenticated resource routes in the app. See public.routes.js.
 router.use('/public', publicRoutes);
 
-// Logged-in Applicant's own portal (Job Portal Phase 3 — submission only;
-// dashboard/tracking come in a later phase). Mirrors '/student' below.
+// Logged-in Applicant's own portal (Job Portal Phase 3 submission + Phase 4
+// dashboard/tracking). Mirrors '/student' below.
 router.use('/applicant', applicantPortalRoutes);
+
+// Super Admin + Admin job management, and Super Admin application review/
+// shortlist/approve/reject (Job Portal Phase 5). Same auth/permission
+// layering as every other staff-facing resource below.
+router.use('/jobs', jobRoutes);
+router.use('/applications', applicationRoutes);
 
 router.use('/auth', authRoutes);
 router.use('/dashboard', dashboardRoutes);

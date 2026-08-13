@@ -87,13 +87,18 @@ const DEFAULT_ROLES = [
       // Updation is intentionally withheld from the Admin Portal — leave
       // unset so it falls back to `false` for every action.
       profile: { view: true, update: true },
-      // Job Portal — Campus Admin is view-only for jobs (same shape as
-      // campuses/slots above: no create/update/delete/export). 'applications'
-      // is intentionally left unset here — no management access for Campus
-      // Admin for now, per the current requirement; falls back to `false`
-      // for every action, same as 'updation' above, and is a config-only
+      // Job Portal Phase 5 — Campus Admin can view every job but only
+      // create/update/delete the ones they personally created
+      // (job.controller.js enforces this via Job.createdBy — the
+      // permission grid only controls whether the action is available at
+      // all, not which specific jobs it applies to, same division of
+      // responsibility as every other module here). No `export` — no CSV/
+      // PDF export exists for jobs. 'applications' is intentionally left
+      // unset here — Application review/shortlist/approve/reject stays a
+      // Super-Admin-only action this phase; falls back to `false` for
+      // every action, same as 'updation' above, and is a config-only
       // change (Roles & Permissions page) to grant later if ever needed.
-      jobs: { view: true },
+      jobs: { view: true, create: true, update: true, delete: true },
     }),
   },
   {
