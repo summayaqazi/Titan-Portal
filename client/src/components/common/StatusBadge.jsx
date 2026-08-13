@@ -10,12 +10,16 @@ const STATUS_STYLES = {
   completed: 'bg-green-100 text-green-700',
   verified: 'bg-green-100 text-green-700',
   published: 'bg-green-100 text-green-700',
+  // Job Portal — an open job/application window (public Jobs/Job Details).
+  open: 'bg-green-100 text-green-700',
   // ambers
   pending: 'bg-amber-100 text-amber-700',
   partial: 'bg-amber-100 text-amber-700',
   leave: 'bg-amber-100 text-amber-700',
   late: 'bg-amber-100 text-amber-700',
   scheduled: 'bg-amber-100 text-amber-700',
+  // Job Portal — a job whose opening date hasn't arrived yet.
+  upcoming: 'bg-amber-100 text-amber-700',
   // reds
   rejected: 'bg-red-100 text-red-700',
   failed: 'bg-red-100 text-red-700',
@@ -26,6 +30,8 @@ const STATUS_STYLES = {
   overdue: 'bg-red-100 text-red-700',
   absent: 'bg-red-100 text-red-700',
   inactive: 'bg-red-100 text-red-700',
+  // Job Portal — a closed job (status=closed, or past its closing date).
+  closed: 'bg-red-100 text-red-700',
   // neutrals
   refunded: 'bg-slate-100 text-slate-600',
   waived: 'bg-slate-100 text-slate-600',

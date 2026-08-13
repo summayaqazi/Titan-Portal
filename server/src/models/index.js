@@ -19,4 +19,9 @@ module.exports = {
   CourseProgress: require('./CourseProgress'),
   Role: require('./Role'),
   Counter: require('./Counter'),
+  // Job Portal — backend foundation only in this phase; no routes/UI wired
+  // to these yet.
+  Job: require('./Job'),
+  Applicant: require('./Applicant'),
+  Application: require('./Application'),
 };

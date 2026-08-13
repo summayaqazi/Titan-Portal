@@ -51,6 +51,11 @@ import PublicCourseDetails from './pages/public/CourseDetails';
 import PublicRegister from './pages/public/Register';
 import PublicRegisterSuccess from './pages/public/RegisterSuccess';
 
+import PublicJobs from './pages/public/Jobs';
+import PublicJobDetails from './pages/public/JobDetails';
+import PublicJobApply from './pages/public/JobApply';
+import PublicApplicationSuccess from './pages/public/ApplicationSuccess';
+
 // Each Super Admin / Admin page sits behind its own RoleRoute with a
 // `module` key so permission edits made on the Roles & Permissions page are
 // enforced route by route (SUPER_ADMIN's permissions are always all-true, so
@@ -101,6 +106,18 @@ export default function App() {
           <Route path="/register" element={<PublicRegister />} />
           <Route path="/enroll/:courseId" element={<PublicRegister />} />
           <Route path="/register/success" element={<PublicRegisterSuccess />} />
+
+          {/* Public Job Portal — Phase 2 (listing + details) + Phase 3
+              (Apply Now -> Applicant login/registration + Application Form
+              -> success). All still unauthenticated-entry, additive sibling
+              routes — nothing above/below this block is touched. No
+              Applicant Dashboard route yet (a later phase) — JobApply.jsx
+              and ApplicationSuccess.jsx handle auth inline via AuthContext,
+              they don't need a protected route of their own. */}
+          <Route path="/jobs" element={<PublicJobs />} />
+          <Route path="/jobs/:id" element={<PublicJobDetails />} />
+          <Route path="/jobs/:id/apply" element={<PublicJobApply />} />
+          <Route path="/apply/success" element={<PublicApplicationSuccess />} />
 
           <Route element={<ProtectedRoute />}>
             <Route element={<RoleRoute allowedRoles={[ROLES.SUPER_ADMIN]} />}>

@@ -87,6 +87,13 @@ const DEFAULT_ROLES = [
       // Updation is intentionally withheld from the Admin Portal — leave
       // unset so it falls back to `false` for every action.
       profile: { view: true, update: true },
+      // Job Portal — Campus Admin is view-only for jobs (same shape as
+      // campuses/slots above: no create/update/delete/export). 'applications'
+      // is intentionally left unset here — no management access for Campus
+      // Admin for now, per the current requirement; falls back to `false`
+      // for every action, same as 'updation' above, and is a config-only
+      // change (Roles & Permissions page) to grant later if ever needed.
+      jobs: { view: true },
     }),
   },
   {
@@ -139,6 +146,24 @@ const DEFAULT_ROLES = [
       // UI in this phase for a student to view (create-only is enough for
       // the Send Feedback workflow).
       feedback: { create: true },
+    }),
+  },
+  {
+    // Job Portal — a job applicant's account. Distinct from STUDENT: an
+    // applicant only ever sees their own applications, never any academic
+    // (Student/Enrollment) data, and vice versa. No Job Portal routes/UI
+    // exist yet in this phase — this Role document just makes the RBAC
+    // foundation ready ahead of that work, same as every other role here.
+    name: ROLES.APPLICANT,
+    label: 'Applicant',
+    description: 'Job applicant account. Applies for jobs and views their own application status.',
+    isSystem: false,
+    permissions: buildPermissions(false, {
+      // View/create their own applications only — enforced by ownership
+      // scoping in the (not-yet-built) applicant-portal controller, not by
+      // this permission grid, same convention as STUDENT's own
+      // assignments/quizzes grants above.
+      applications: { view: true, create: true },
     }),
   },
 ];

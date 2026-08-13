@@ -6,3 +6,7 @@ npm-debug.log*
 # uploaded files (keep the folder, ignore its contents)
 src/uploads/*
 !src/uploads/.gitkeep
+
+# private uploads (resumes/CVs) — never publicly served, never committed
+src/private-uploads/resumes/*
+!src/private-uploads/resumes/.gitkeep
