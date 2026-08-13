@@ -44,6 +44,14 @@ export const SUPER_ADMIN_NAV = [
   { label: 'Trainers', path: '/super-admin/trainers', icon: UserCog, module: 'trainers' },
   { label: 'Attendance', path: '/super-admin/attendance', icon: CalendarCheck, module: 'attendance' },
   { label: 'Payments', path: '/super-admin/payments', icon: Wallet, module: 'payments' },
+  {
+    label: 'Job Portal',
+    icon: Briefcase,
+    children: [
+      { label: 'Jobs', path: '/super-admin/jobs', module: 'jobs' },
+      { label: 'Applications', path: '/super-admin/applications', module: 'applications' },
+    ],
+  },
   { label: 'Admin Users', path: '/super-admin/admin-users', icon: ShieldCheck, module: 'adminUsers' },
   { label: 'Roles & Permissions', path: '/super-admin/roles-permissions', icon: KeyRound, module: 'rolesPermissions' },
   { label: 'Profile', path: '/super-admin/profile', icon: UserCircle, module: 'profile' },
@@ -71,6 +79,12 @@ export const ADMIN_NAV = [
     children: [{ label: 'Slots', path: '/admin/slots', module: 'slots' }],
   },
   { label: 'Trainers', path: '/admin/trainers', icon: UserCog, module: 'trainers' },
+  // Job Portal Phase 5 — Campus Admin manages jobs (creation/edit/publish/
+  // close/delete restricted server-side to the ones they created — see
+  // job.controller.js). No Applications entry: application review stays
+  // Super-Admin-only this phase (Admin's 'applications' permission grant
+  // is empty, so that page would just 403 for them).
+  { label: 'Jobs', path: '/admin/jobs', icon: Briefcase, module: 'jobs' },
   {
     label: 'Trainer Attendance',
     icon: ClipboardList,

@@ -22,6 +22,8 @@ import Payments from './pages/superadmin/Payments';
 import AdminUsers from './pages/superadmin/AdminUsers';
 import RolesPermissions from './pages/superadmin/RolesPermissions';
 import Profile from './pages/superadmin/Profile';
+import Jobs from './pages/superadmin/Jobs';
+import Applications from './pages/superadmin/Applications';
 
 import MarkAttendance from './pages/admin/MarkAttendance';
 import ViewAttendance from './pages/admin/ViewAttendance';
@@ -143,6 +145,9 @@ export default function App() {
                 {moduleRoute('trainers', 'trainers', <Trainers />)}
                 {moduleRoute('attendance', 'attendance', <Attendance />)}
                 {moduleRoute('payments', 'payments', <Payments />)}
+                {/* Job Portal Phase 5 */}
+                {moduleRoute('jobs', 'jobs', <Jobs />)}
+                {moduleRoute('applications', 'applications', <Applications />)}
                 {moduleRoute('adminUsers', 'admin-users', <AdminUsers />)}
                 {moduleRoute('rolesPermissions', 'roles-permissions', <RolesPermissions />)}
                 {moduleRoute('profile', 'profile', <Profile />)}
@@ -159,6 +164,12 @@ export default function App() {
                 {adminModuleRoute('attendance', 'attendance/multi', <MultiAttendance />)}
                 {adminModuleRoute('slots', 'slots', <Slots />)}
                 {adminModuleRoute('trainers', 'trainers', <Trainers />)}
+                {/* Job Portal Phase 5 — same Jobs.jsx component as Super
+                    Admin; create/edit/publish/close/delete are restricted
+                    server-side to the jobs this Admin created (see
+                    job.controller.js's canManageJob). No Applications
+                    route for Admin — that stays Super-Admin-only. */}
+                {adminModuleRoute('jobs', 'jobs', <Jobs />)}
                 {adminModuleRoute('attendance', 'trainer-attendance/mark', <TrainerMarkAttendance />)}
                 {adminModuleRoute('attendance', 'trainer-attendance/view', <TrainerViewAttendance />)}
                 {adminModuleRoute('attendance', 'trainer-attendance/requests', <TrainerAttendanceRequests />)}
