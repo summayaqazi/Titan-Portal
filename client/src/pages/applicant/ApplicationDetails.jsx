@@ -10,12 +10,15 @@ import {
   FileText,
   GraduationCap,
   Languages,
+  MapPin,
   Wallet,
 } from 'lucide-react';
-import { Button, StatusBadge } from '../../components/common';
+import { Button, StatusBadge, Avatar } from '../../components/common';
 import applicantPortalApi from '../../api/applicantPortalApi';
 import { downloadFile, prettyFileName } from '../../utils/downloadFile';
 import { getErrorMessage } from '../../utils/errors';
+import { resolveFileUrl } from '../../utils/fileUrl';
+import { useAuth } from '../../context/AuthContext';
 
 const JOB_TYPE_LABELS = { full_time: 'Full Time', part_time: 'Part Time', contract: 'Contract' };
 const STATUS_LABELS = {
@@ -60,6 +63,7 @@ function Field({ label, children }) {
 // same "not found" error state either way.
 export default function ApplicationDetails() {
   const { id } = useParams();
+  const { user } = useAuth();
   const [application, setApplication] = useState(null);
   const [error, setError] = useState('');
   const [downloadError, setDownloadError] = useState('');
@@ -112,6 +116,11 @@ export default function ApplicationDetails() {
             {job ? (
               <>
                 <div className="mb-4 grid grid-cols-1 gap-3 text-sm text-slate-500 sm:grid-cols-2">
+                  {job.city && (
+                    <div className="flex items-center gap-1.5 font-medium text-slate-700">
+                      <MapPin size={15} className="shrink-0" /> {job.city}
+                    </div>
+                  )}
                   <div className="flex items-center gap-1.5">
                     <Briefcase size={15} className="shrink-0" /> {JOB_TYPE_LABELS[job.jobType] || job.jobType}
                     {job.experience ? ` · ${job.experience}` : ''}
@@ -204,12 +213,19 @@ export default function ApplicationDetails() {
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-white p-5 sm:p-6">
-            <h2 className="mb-4 text-sm font-semibold text-slate-700">Your Application</h2>
+            <div className="mb-4 flex items-center gap-3">
+              {/* The photo submitted with this application (Application.
+                  photoPath) — distinct from, and never, the job's own
+                  image. */}
+              <Avatar src={resolveFileUrl(application.photoPath)} name={user?.name} size={44} />
+              <h2 className="text-sm font-semibold text-slate-700">Your Application</h2>
+            </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Application Date">{formatDate(application.appliedDate)}</Field>
               <Field label="Current Status">
                 <StatusBadge status={application.status} />
               </Field>
+              <Field label="Applied Via">{application.applicationMethod || '—'}</Field>
               <Field label="Qualification">{application.qualification || '—'}</Field>
               <Field label="Experience">{application.experience || '—'}</Field>
               <Field label="Subject Command">{application.subjectCommand || '—'}</Field>

@@ -11,6 +11,7 @@ const { parseListQuery, paginatedResponse } = require('../utils/queryHelpers');
 const { studentAuditPdf } = require('../utils/pdfGenerator');
 const { sendCsv } = require('../utils/csvExport');
 const { requireAdminCampusScope } = require('../utils/campusScope');
+const { LEGACY_UNREVIEWED_STUDENT_IDS } = require('../utils/legacyExclusions');
 
 const CNIC_RE = /^\d{5}-\d{7}-\d$/;
 
@@ -24,6 +25,21 @@ const POPULATE = [
 
 // Shared by getStudents (paginated) and exportStudents (full CSV) so the
 // export always reflects the same filters currently applied on the page.
+// A Student "qualifies" for the Students tab only if they have at least one
+// Enrollment whose status isn't 'pending' — enrolled/approved/passed/
+// completed/dropout/etc. all count, only 'pending' doesn't. This is
+// deliberately a DIFFERENT axis from the Registration/legacy exclusion
+// above: a person can be a fully legitimate Student (survived Registration
+// approval, or was manually added) and still not appear here if every
+// enrollment they currently have is still awaiting course admission. A
+// student with multiple enrollments qualifies if ANY of them is non-pending
+// (e.g. one pending + one dropout still shows) — never all-or-nothing on a
+// single enrollment. Never deletes or touches the pending Enrollment/Student
+// documents themselves — this only narrows what this list/detail/export
+// returns; the record stays in MongoDB and reappears automatically the
+// moment that enrollment (or another one) moves off 'pending'.
+const getQualifyingStudentIds = () => Enrollment.find({ status: { $ne: 'pending' } }).distinct('student');
+
 const buildStudentFilter = async (req) => {
   const filter = {};
   if (req.query.city) filter.city = req.query.city;
@@ -34,22 +50,49 @@ const buildStudentFilter = async (req) => {
     filter.cnicVerified = req.query.cnicVerified === 'true';
   }
 
+  // Two independent `_id` narrowings composed by intersecting the actual id
+  // lists in JS (not by assigning `$in` twice, which would just overwrite
+  // itself) — the legacy exclusion, and the qualifying-enrollment set below.
+  let allowedIds = await getQualifyingStudentIds();
+  const legacyIds = new Set(LEGACY_UNREVIEWED_STUDENT_IDS);
+  allowedIds = allowedIds.filter((id) => !legacyIds.has(id.toString()));
+
   // A student has no direct campus field — it's derived from their
   // enrollments. `enrollmentStatus` and the campus scope both narrow via
-  // Enrollment, so intersect them when both apply rather than letting one
-  // overwrite the other. `requireAdminCampusScope` always returns a value
-  // for ADMIN (the Admin Portal's Campus Selector, or a sentinel that
-  // matches nothing) so this endpoint can never return another campus's
-  // students even if the client fails to send one; undefined for every
-  // other role, so Super Admin is unaffected.
+  // Enrollment, so intersect them (and the qualifying-set above) when both
+  // apply rather than letting one overwrite the other. `requireAdminCampusScope`
+  // always returns a value for ADMIN (the Admin Portal's Campus Selector, or
+  // a sentinel that matches nothing) so this endpoint can never return
+  // another campus's students even if the client fails to send one;
+  // undefined for every other role, so Super Admin is unaffected.
   const campusScope = requireAdminCampusScope(req);
   if (req.query.enrollmentStatus || campusScope) {
     const enrollmentFilter = {};
-    if (req.query.enrollmentStatus) enrollmentFilter.status = req.query.enrollmentStatus;
+    if (req.query.enrollmentStatus) {
+      // Usually a single status (the Filter modal's own Select sends
+      // exactly one), but the Super Admin Dashboard's "Approved/Enrolled
+      // Students" card links here with both statuses at once
+      // (?enrollmentStatus=approved,enrolled) since that card counts them
+      // together — additive, backward-compatible: a single value behaves
+      // exactly as before. Composes with the qualifying-set above: e.g.
+      // explicitly filtering `enrollmentStatus=pending` still only returns
+      // students who ALSO have some other non-pending enrollment — a
+      // student whose only enrollment is pending never appears here no
+      // matter how this filter is used, matching the "pending is never
+      // shown in Students" rule.
+      const statuses = req.query.enrollmentStatus
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      enrollmentFilter.status = statuses.length > 1 ? { $in: statuses } : statuses[0];
+    }
     if (campusScope) enrollmentFilter.campus = campusScope;
-    const studentIds = await Enrollment.find(enrollmentFilter).distinct('student');
-    filter._id = { $in: studentIds };
+    const scopedIds = await Enrollment.find(enrollmentFilter).distinct('student');
+    const scopedIdStrings = new Set(scopedIds.map((id) => id.toString()));
+    allowedIds = allowedIds.filter((id) => scopedIdStrings.has(id.toString()));
   }
+
+  filter._id = { $in: allowedIds };
 
   const search = (req.query.search || '').trim();
   if (search) {
@@ -105,6 +148,14 @@ const getStudents = asyncHandler(async (req, res) => {
 });
 
 const getStudent = asyncHandler(async (req, res) => {
+  // Same 404-for-both-"missing" cases as elsewhere in this app (e.g.
+  // applicantPortal.controller.js's getMyApplication) — a legacy excluded id
+  // reads identically to one that never existed, never as a distinct error.
+  if (LEGACY_UNREVIEWED_STUDENT_IDS.includes(req.params.id)) {
+    res.status(404);
+    throw new Error('Student not found');
+  }
+
   const student = await Student.findById(req.params.id).populate(POPULATE);
   if (!student) {
     res.status(404);
@@ -118,6 +169,17 @@ const getStudent = asyncHandler(async (req, res) => {
     .populate({ path: 'trainer', populate: { path: 'user', select: 'name' } })
     .populate('slot', 'label')
     .sort({ admissionDate: -1 });
+
+  // Same qualifying-enrollment rule as buildStudentFilter/getStudents — a
+  // student with every enrollment still 'pending' doesn't appear on the
+  // Students tab at all, so a direct-id lookup shouldn't reach them either.
+  // Not currently called by the frontend (StudentDetailDrawer receives its
+  // data as a prop from the already-filtered list, never a separate fetch),
+  // kept consistent regardless for any direct API caller.
+  if (!enrollments.some((e) => e.status !== 'pending')) {
+    res.status(404);
+    throw new Error('Student not found');
+  }
 
   res.json({ success: true, data: { ...student.toObject(), enrollments } });
 });

@@ -5,10 +5,12 @@ const {
   submitAssignment,
   getProgress,
   getAttendance,
+  markOwnAttendanceViaQr,
   getPayments,
   getQuizzes,
   getQuizInfo,
   startQuizAttempt,
+  saveQuizAttemptProgress,
   submitQuizAttempt,
   getQuizAttempt,
   getCourseDetails,
@@ -55,6 +57,14 @@ router.get('/me/courses/:enrollmentId', checkPermission('dashboard', 'view'), ge
 // incremental approach as every prior phase.
 router.get('/me/progress', checkPermission('progress', 'view'), getProgress);
 router.get('/me/attendance', checkPermission('attendance', 'view'), getAttendance);
+// Self-service "Scan QR" attendance — the ONE write this student-facing
+// Attendance surface gets (everything else here stays read-only, per the
+// Phase 3 comment above); gated on 'create' (a new grant — see the
+// FIXUPS entry in seedStudentPortalPermissions.js) rather than 'update',
+// since a student is only ever creating today's own record, never editing
+// an existing one (markOwnAttendanceViaQr refuses to touch a record that
+// already exists).
+router.post('/me/attendance/scan', checkPermission('attendance', 'create'), markOwnAttendanceViaQr);
 
 // Phase 4 — Payments, read-only. Deliberately NOT a forced-query reuse of
 // payment.controller.js's getPayments (that function's `search` branch
@@ -89,6 +99,10 @@ router.get('/me/quizzes', checkPermission('quizzes', 'view'), getQuizzes);
 router.get('/me/quizzes/:quizId', checkPermission('quizzes', 'view'), getQuizInfo);
 router.post('/me/quizzes/:quizId/start', checkPermission('quizzes', 'create'), startQuizAttempt);
 router.get('/me/quiz-attempts/:attemptId', checkPermission('quizzes', 'view'), getQuizAttempt);
+// Autosave — same 'create' permission as starting/submitting an attempt
+// (saving progress is part of the same "take the quiz" action), never
+// 'update' (a student still can't touch anything about the quiz itself).
+router.put('/me/quiz-attempts/:attemptId/progress', checkPermission('quizzes', 'create'), saveQuizAttemptProgress);
 router.post('/me/quiz-attempts/:attemptId/submit', checkPermission('quizzes', 'create'), submitQuizAttempt);
 
 // Phase 7 — Profile + Edit Profile. Student-level fields only (address,

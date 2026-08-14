@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Briefcase, Eye } from 'lucide-react';
+import { Briefcase, Eye, MapPin } from 'lucide-react';
 import { PageContainer, Table, Pagination, Select, StatusBadge, Button, EmptyState } from '../../components/common';
 import useCrudResource from '../../hooks/useCrudResource';
 import applicantPortalApi from '../../api/applicantPortalApi';
@@ -42,6 +42,21 @@ export default function Applications() {
         </div>
       ),
     },
+    {
+      // The city the applicant applied for — always the current job
+      // record's own `city` (never hardcoded/copied at submit time), same
+      // source every other city display already uses across this app.
+      key: 'city',
+      header: 'City',
+      render: (row) =>
+        row.job?.city ? (
+          <span className="inline-flex items-center gap-1 text-slate-600">
+            <MapPin size={13} className="shrink-0 text-slate-400" /> {row.job.city}
+          </span>
+        ) : (
+          <span className="text-slate-400">—</span>
+        ),
+    },
     { key: 'appliedDate', header: 'Applied Date', render: (row) => formatDate(row.appliedDate) },
     { key: 'closingDate', header: 'Closing Date', render: (row) => (row.job ? formatDate(row.job.closingDate) : '—') },
     { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} /> },
@@ -60,7 +75,10 @@ export default function Applications() {
   ];
 
   return (
-    <PageContainer title="My Applications" description="Every job you've applied for, and its current status">
+    <PageContainer
+      title="My Applications"
+      description="Track the status of every job you've applied for — Pending, Under Review, Shortlisted, Approved, or Rejected."
+    >
       <div className="mb-4 w-full max-w-[10rem]">
         <Select value={filters.status || ''} onChange={(e) => setFilter('status', e.target.value || undefined)}>
           {STATUS_OPTIONS.map((opt) => (

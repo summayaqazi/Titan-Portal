@@ -26,7 +26,10 @@ const FIXUPS = {
   assignments: { view: true, create: true },
   // Phase 3 — Progress and Attendance are both read-only for students.
   progress: { view: true },
-  attendance: { view: true },
+  // create: added for the "Scan QR" self-attendance feature — marking
+  // today's own record by scanning their own Student ID Card QR. No
+  // update/delete — an already-marked record stays Trainer/Admin-only to change.
+  attendance: { view: true, create: true },
   // Phase 5 — Quiz: view own quizzes/results, create own attempts
   // (start + submit). No update/delete — quiz authoring stays Trainer-only.
   quizzes: { view: true, create: true },

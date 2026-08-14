@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { PageContainer } from '../../components/common';
 import TrainerAttendanceHistory from '../../components/attendance/TrainerAttendanceHistory';
 import batchesApi from '../../api/batchesApi';
@@ -14,6 +15,7 @@ export default function TrainerAttendanceRequests() {
   const canUpdate = can('attendance', 'update');
   const canDelete = can('attendance', 'delete');
   const campusFilter = useAdminCampusFilter();
+  const navigate = useNavigate();
   const [batches, setBatches] = useState([]);
   const [trainers, setTrainers] = useState([]);
 
@@ -24,7 +26,7 @@ export default function TrainerAttendanceRequests() {
   }, []);
 
   return (
-    <PageContainer title="Attendance Requests" description="Verify or reject pending trainer check-in requests">
+    <PageContainer title="Attendance Requests" description="Verify or reject pending trainer check-in requests" onBack={() => navigate(-1)}>
       <TrainerAttendanceHistory
         trainers={trainers}
         batches={batches}

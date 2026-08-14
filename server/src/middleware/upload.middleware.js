@@ -113,6 +113,41 @@ const uploadResume = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB — same limit as uploadDocument above
 });
 
+// Job Portal — job application submission. Accepts BOTH the applicant's
+// own photo (required, image-only, public /uploads/ — same convention as
+// every other profile-picture upload in this app) and an optional resume/
+// CV (private-uploads/resumes/, pdf/doc only, never public) in the SAME
+// multipart request. A single multer instance whose destination/fileFilter
+// branch on `file.fieldname`, since `upload`/`uploadResume` above each only
+// handle one file type/destination — this is the one upload site in the
+// app that genuinely needs both at once. Deliberately a separate instance
+// from both, not a change to either: every other caller of `upload`/
+// `uploadResume` is completely unaffected.
+const applicationStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    if (file.fieldname === 'resume') return cb(null, privateUploadsDir);
+    cb(null, path.join(__dirname, '..', 'uploads'));
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    const ext = path.extname(file.originalname);
+    const base = sanitizeFilename(path.basename(file.originalname, ext));
+    cb(null, `${uniqueSuffix}-${base}${ext}`);
+  },
+});
+
+const applicationFileFilter = (req, file, cb) => {
+  if (file.fieldname === 'resume') return resumeFileFilter(req, file, cb);
+  return fileFilter(req, file, cb);
+};
+
+const uploadApplicationFiles = multer({
+  storage: applicationStorage,
+  fileFilter: applicationFileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 }, // covers the resume; the photo is still effectively capped by fileFilter's image-type check
+});
+
 module.exports = upload;
+module.exports.uploadApplicationFiles = uploadApplicationFiles;
 module.exports.uploadDocument = uploadDocument;
 module.exports.uploadResume = uploadResume;

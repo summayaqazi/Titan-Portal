@@ -19,17 +19,25 @@ const { getCourseProgressPercent } = require('../utils/courseProgress');
 const { withComputed } = require('./trainerProgress.controller');
 const { summarizeAttendance } = require('./attendance.controller');
 const { syncSchedule } = require('./trainerQuiz.controller');
-
-// The Quiz model (server/src/models/Quiz.js) has no passing-percentage
-// field — verified by reading it, not assumed. Rather than add one (a
-// schema change that, however small, touches a file the Trainer Portal's
-// quiz management depends on), pass/fail is drawn with a single fixed
-// threshold defined here, local to the Student Portal's own grading logic
-// only. Zero risk to Trainer/Admin: nothing about how a quiz is created,
-// edited, published, or scored by a trainer changes. If a per-quiz
-// configurable threshold is wanted later, that's an additive Quiz.js field
-// plus a Trainer-side control — out of scope for this phase.
-const QUIZ_PASS_PERCENTAGE = 50;
+// Grading/availability/attempt-cap logic shared with the Trainer Portal
+// (trainerQuiz.controller.js's own quiz authoring) — pulled into its own
+// util specifically so neither controller has to import (and risk a
+// circular require with) the other. See quizGrading.js's own header
+// comment for why.
+const {
+  QUIZ_PASS_PERCENTAGE,
+  MAX_QUIZ_ATTEMPTS,
+  sanitizeQuestion,
+  gradeAttempt,
+  computeAttemptDeadline,
+  closeExpiredAttempt,
+  getQuizAvailability,
+  AVAILABILITY_MESSAGES,
+  canResumeAttempt,
+  pickDisplayAttempt,
+  cappedAttemptsUsed,
+  visibleAttempts,
+} = require('../utils/quizGrading');
 
 // Same single-vs-array multer/FormData quirk handled the same way as
 // trainerAssignment.controller.js's toArray.
@@ -60,6 +68,36 @@ const dayInBatchRange = (date, batch) => {
   if (batch?.startDate && day < new Date(new Date(batch.startDate).setHours(0, 0, 0, 0))) return false;
   if (batch?.endDate && day > new Date(new Date(batch.endDate).setHours(23, 59, 59, 999))) return false;
   return true;
+};
+
+// The `type` discriminator every Student ID Card QR encodes (see
+// client/src/utils/studentIdCard.js's buildQrPayload — both sides must
+// agree on this literal string). Doubles as a cheap first filter against
+// scanning anything else — a Trainer ID card (freeform text, see
+// trainerIdCard.js), a random URL, or any other QR someone might point the
+// camera at — none of which will ever parse into `{ type: STUDENT_QR_TYPE }`.
+const STUDENT_QR_TYPE = 'titan-student-id-card';
+
+// "09:00" -> 540 (minutes since midnight) — Slot.startTime/endTime's own
+// stored format (see models/Slot.js). Used only for a same-day minutes
+// comparison, never combined into a Date, so it's immune to timezone shift.
+const timeToMinutes = (hhmm) => {
+  const [h, m] = (hhmm || '').split(':').map(Number);
+  return Number.isInteger(h) && Number.isInteger(m) ? h * 60 + m : null;
+};
+
+// Is `slot`'s own class window (start/end, both "HH:MM") currently open,
+// right now, on the server's own clock? Used to gate self-attendance so a
+// student enrolled in two courses that both meet today can only ever be
+// marked present for whichever one's class is actually in session at the
+// moment they scan — never both, and never a course whose slot already
+// ended or hasn't started yet, even though its *day* still matches.
+const isSlotActiveNow = (slot, now) => {
+  const startMin = timeToMinutes(slot?.startTime);
+  const endMin = timeToMinutes(slot?.endTime);
+  if (startMin === null || endMin === null) return false;
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  return nowMin >= startMin && nowMin <= endMin;
 };
 
 // @desc    Student's own dashboard — enrollment/attendance/payment stats,
@@ -236,16 +274,23 @@ const getAssignments = asyncHandler(async (req, res) => {
   res.json({ success: true, data });
 });
 
-// @desc    Create or update (upsert — one submission per student per
-//          assignment, same as the Submission model's unique index) the
-//          caller's own submission for one assignment. Rejects with 403
-//          once the deadline has passed, checked against `new Date()` (the
-//          server's own clock) — never a client-supplied time, so this
-//          can't be bypassed by a manipulated device clock. Enrollment in
-//          the assignment's batch is verified the same way trainer routes
-//          verify batch ownership: server-side, from req.student, never
-//          trusting anything the client sends beyond the assignment id in
-//          the URL.
+// @desc    Create the caller's own submission for one assignment. One
+//          student + one assignment = one submission, permanently — once a
+//          Submission document exists for this (assignment, student) pair,
+//          this rejects with 409 rather than overwriting it (no
+//          resubmit/upsert). This is the real enforcement; the frontend
+//          hiding the form once `submission` is present is just UX — a
+//          client that calls this route directly a second time must still
+//          be refused, so duplicates can't be created by hitting the API
+//          manually either. Also enforced at the data layer by the
+//          Submission model's unique (assignment, student) index. Rejects
+//          with 403 once the deadline has passed, checked against `new
+//          Date()` (the server's own clock) — never a client-supplied time,
+//          so this can't be bypassed by a manipulated device clock.
+//          Enrollment in the assignment's batch is verified the same way
+//          trainer routes verify batch ownership: server-side, from
+//          req.student, never trusting anything the client sends beyond the
+//          assignment id in the URL.
 // @route   POST /api/student/me/assignments/:assignmentId/submit
 // @access  Private (STUDENT)
 const submitAssignment = asyncHandler(async (req, res) => {
@@ -267,26 +312,18 @@ const submitAssignment = asyncHandler(async (req, res) => {
     throw new Error('Submission deadline has expired.');
   }
 
+  const existing = await Submission.findOne({ assignment: assignment._id, student: student._id });
+  if (existing) {
+    res.status(409);
+    throw new Error('You have already submitted this assignment.');
+  }
+
   const { description } = req.body;
   const links = toArray(req.body.links);
   const newFiles = (req.files || []).map((f) => `/uploads/${f.filename}`);
 
-  let submission = await Submission.findOne({ assignment: assignment._id, student: student._id });
-  if (submission) {
-    if (description !== undefined) submission.description = description;
-    if (links !== undefined) submission.links = links;
-    if (newFiles.length) submission.files = [...submission.files, ...newFiles];
-    submission.submittedAt = new Date();
-    // A resubmission is new work — any previous review no longer applies
-    // to what's now on file, so it goes back to pending rather than
-    // keeping a stale Approved/Rejected badge and feedback on unreviewed
-    // content.
-    submission.status = 'pending';
-    submission.feedback = undefined;
-    submission.feedbackBy = undefined;
-    submission.feedbackAt = undefined;
-    await submission.save();
-  } else {
+  let submission;
+  try {
     submission = await Submission.create({
       assignment: assignment._id,
       student: student._id,
@@ -295,6 +332,17 @@ const submitAssignment = asyncHandler(async (req, res) => {
       files: newFiles,
       submittedAt: new Date(),
     });
+  } catch (err) {
+    // Race: two near-simultaneous requests both pass the findOne check
+    // above before either write lands. The unique (assignment, student)
+    // index is the actual backstop here — a duplicate-key error means a
+    // submission now exists either way, so report it the same as the
+    // pre-check above rather than a generic 500.
+    if (err?.code === 11000) {
+      res.status(409);
+      throw new Error('You have already submitted this assignment.');
+    }
+    throw err;
   }
 
   res.status(201).json({ success: true, data: submission });
@@ -390,6 +438,152 @@ const getAttendance = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { stats, details } });
 });
 
+// @desc    Mark the caller's OWN attendance for today by scanning their own
+//          Student ID Card QR (see utils/studentIdCard.js on the client for
+//          what that QR encodes). This is the ONLY student-initiated
+//          attendance write in the app — every other attendance mark/update
+//          stays Trainer/Admin-only via attendance.controller.js#markAttendance
+//          (untouched by this route, different permission module action).
+//
+//          Verification, in order, every step server-side/re-derived —
+//          nothing here is ever trusted from the client beyond the raw QR
+//          text itself:
+//            1. The QR must parse as JSON with the expected `type` — proves
+//               it's actually a Student ID Card QR, not a Trainer one (never
+//               involved here) or an unrelated code.
+//            2. Its `studentId` must equal req.student._id — the student
+//               scanning it must be the same student the card belongs to.
+//               A student can never mark themselves present by scanning
+//               someone else's card, and can never mark someone ELSE
+//               present either (attendance is always written for
+//               req.student, never for whatever id the QR/body claims).
+//            3. Attendance is only marked for an enrollment whose class is
+//               actually IN SESSION right now — day-of-week + batch-date-
+//               range (dayInBatchRange + slot.days, same as getDashboard's
+//               own weekly schedule widget) AND the current time falling
+//               inside that slot's own startTime/endTime window
+//               (isSlotActiveNow). This is what stops a student enrolled in
+//               two courses that both meet today from being marked present
+//               for both at once just because it's the right day — only
+//               whichever one's class window the server clock says is open
+//               right now qualifies. Never a client-supplied batch/date/time,
+//               so a student can't backdate, pick an arbitrary course, or
+//               fake being in two places at once.
+//            4. One Attendance document per (enrollment, date) — the
+//               model's own existing unique index. If one already exists for
+//               today (marked by anyone, any status), it is left completely
+//               untouched and reported back as already-marked — a self-scan
+//               can never overwrite a Trainer's earlier 'absent'/'late' mark
+//               to 'present'.
+// @route   POST /api/student/me/attendance/scan
+// @access  Private (STUDENT)
+const markOwnAttendanceViaQr = asyncHandler(async (req, res) => {
+  const student = req.student;
+  const raw = req.body.qrPayload;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    res.status(400);
+    throw new Error('This QR code could not be read. Please scan your Student ID Card.');
+  }
+
+  if (!parsed || parsed.type !== STUDENT_QR_TYPE || !parsed.studentId) {
+    res.status(400);
+    throw new Error('This is not a valid Student ID Card QR code.');
+  }
+
+  if (String(parsed.studentId) !== String(student._id)) {
+    res.status(403);
+    throw new Error('This ID card does not belong to your account.');
+  }
+
+  const enrollments = await Enrollment.find({ student: student._id, status: 'enrolled' })
+    .populate('course', 'name')
+    .populate('batch', 'batchCode startDate endDate')
+    .populate('slot', 'days startTime endTime');
+
+  const now = new Date();
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const dayName = DAY_NAMES[now.getDay()];
+
+  const todaysEnrollments = enrollments.filter(
+    (e) => e.slot?.days?.includes(dayName) && dayInBatchRange(today, e.batch)
+  );
+  if (!todaysEnrollments.length) {
+    res.status(400);
+    throw new Error('You have no class scheduled today.');
+  }
+
+  // Narrowed further to whichever of today's classes is actually in
+  // session RIGHT NOW — the fix for a student enrolled in multiple courses
+  // that meet the same day: having a class today is not enough, its own
+  // time window must currently be open.
+  const activeNowEnrollments = todaysEnrollments.filter((e) => isSlotActiveNow(e.slot, now));
+  if (!activeNowEnrollments.length) {
+    res.status(400);
+    throw new Error('No class is currently in session for you. Attendance can only be marked during your scheduled class time.');
+  }
+  // Two of a student's own courses both being "in session" at the exact
+  // same moment would mean their slots genuinely overlap — a scheduling
+  // conflict, not a normal case. Rather than guess which one they meant
+  // (and risk marking the wrong one, or both — explicitly disallowed),
+  // fail closed and point them at whoever can fix the schedule.
+  if (activeNowEnrollments.length > 1) {
+    res.status(409);
+    throw new Error('More than one of your classes is scheduled at this exact time. Please contact your campus admin to resolve the schedule conflict.');
+  }
+
+  const records = [];
+  for (const e of activeNowEnrollments) {
+    // Atomic upsert with $setOnInsert (not $set) — if a record for
+    // {enrollment, date} already exists (marked by anyone, any status), this
+    // is a complete no-op that just returns it untouched; only a genuinely
+    // missing record gets the new 'present' fields inserted. Race-safe by
+    // construction (a rapid double-tap/duplicate request can't create two
+    // documents or corrupt an existing mark) — the same $setOnInsert/upsert
+    // shape already relied on elsewhere in this codebase (Counter.js's
+    // nextSequence), just with $setOnInsert instead of $inc since here the
+    // goal is "create once, never touch again" rather than "always increment".
+    // eslint-disable-next-line no-await-in-loop
+    const result = await Attendance.findOneAndUpdate(
+      { enrollment: e._id, date: today },
+      {
+        $setOnInsert: {
+          enrollment: e._id,
+          student: student._id,
+          batch: e.batch?._id,
+          date: today,
+          status: 'present',
+          markedBy: req.user._id,
+          remarks: 'Marked via Student ID Card QR scan',
+        },
+      },
+      // `includeResultMetadata` (not the deprecated `rawResult`) is what
+      // this Mongoose version actually needs to get the
+      // {value, lastErrorObject} wrapper back — verified directly against
+      // the live driver, since `rawResult` alone silently returned just the
+      // plain document here (no `.value`/`.lastErrorObject` at all).
+      { upsert: true, returnDocument: 'after', includeResultMetadata: true, setDefaultsOnInsert: true }
+    );
+    const doc = result.value;
+    const alreadyMarked = Boolean(result.lastErrorObject?.updatedExisting);
+    records.push({ courseName: e.course?.name, batchCode: e.batch?.batchCode, status: doc.status, alreadyMarked });
+  }
+
+  const newlyMarked = records.some((r) => !r.alreadyMarked);
+  res.json({
+    success: true,
+    data: {
+      marked: newlyMarked,
+      allAlreadyMarked: !newlyMarked,
+      records,
+    },
+  });
+});
+
 // @desc    Student's own fee/payment history — every Payment document
 //          scoped to this student only (never another student's, and never
 //          filterable to another student's — unlike the Admin-facing
@@ -439,52 +633,6 @@ const getPayments = asyncHandler(async (req, res) => {
   res.json({ success: true, data });
 });
 
-// Strips a question down to what's safe to send a student who can still
-// attempt (or is currently attempting) the quiz — text/type/options/points
-// only. `correctOptions` is never included here; the only place a
-// question's correct answer ever factors in is server-side grading inside
-// gradeAttempt() below, which reads it straight off the authoritative Quiz
-// document, never off anything the client sent.
-const sanitizeQuestion = (q) => ({
-  _id: q._id,
-  text: q.text,
-  type: q.type,
-  options: q.options,
-  points: q.points,
-});
-
-// The one and only place a QuizAttempt's score/percentage/status are ever
-// computed. `answers` is whatever the client submitted, already filtered
-// (by the caller) down to question ids that actually belong to `quiz` — a
-// question with no matching answer, or an answer set that doesn't exactly
-// match `correctOptions`, simply scores 0 for that question. The client
-// never supplies (and this function never reads) a score/percentage/status
-// from the request — those three values are the server's alone to decide.
-const gradeAttempt = (quiz, answers) => {
-  const answerByQuestion = new Map(
-    (answers || []).map((a) => [String(a.question), new Set((a.selectedOptions || []).map(Number))])
-  );
-
-  let score = 0;
-  let correctCount = 0;
-  quiz.questions.forEach((q) => {
-    const selected = answerByQuestion.get(String(q._id));
-    if (!selected) return;
-    const correct = new Set(q.correctOptions);
-    const isCorrect = selected.size === correct.size && [...selected].every((v) => correct.has(v));
-    if (isCorrect) {
-      score += q.points || 0;
-      correctCount += 1;
-    }
-  });
-
-  const totalMarks = quiz.totalMarks;
-  const totalQuestions = quiz.questions.length;
-  const percentage = totalMarks > 0 ? Math.round((score / totalMarks) * 100) : 0;
-  const status = percentage >= QUIZ_PASS_PERCENTAGE ? 'passed' : 'failed';
-  return { score, correctCount, totalMarks, totalQuestions, percentage, status };
-};
-
 // @desc    Quizzes across every batch this student is currently enrolled
 //          in — published only (a draft or not-yet-live scheduled quiz
 //          isn't "legitimately available" to a student yet), each with
@@ -515,29 +663,69 @@ const getQuizzes = asyncHandler(async (req, res) => {
     attemptsByQuiz.get(key).push(a);
   });
 
-  const data = available.map((q) => {
-    const quizAttempts = attemptsByQuiz.get(String(q._id)) || [];
-    const latest = quizAttempts[0] || null;
-    const graded = quizAttempts.filter((a) => a.status !== 'in-progress');
-    const bestPercentage = graded.length ? Math.max(...graded.map((a) => a.percentage)) : null;
+  const data = await Promise.all(
+    available.map(async (q) => {
+      const quizAttempts = attemptsByQuiz.get(String(q._id)) || [];
+      // Reconcile any attempt whose own deadline has quietly passed since it
+      // was last read, so "in-progress" here always means genuinely still
+      // resumable — same lazy-close-on-read pattern syncSchedule already
+      // uses for quiz.status above.
+      await Promise.all(quizAttempts.map((a) => closeExpiredAttempt(q, a)));
 
-    return {
-      _id: q._id,
-      title: q.title,
-      courseName: q.course?.name,
-      totalQuestions: q.questions.length,
-      durationMinutes: q.durationMinutes,
-      totalMarks: q.totalMarks,
-      attemptsCount: graded.length,
-      latestAttempt: latest
-        ? { status: latest.status, percentage: latest.percentage, score: latest.score, attemptNumber: latest.attemptNumber }
-        : null,
-      bestPercentage,
-      // 'pending' (never attempted) | 'in-progress' (resumable attempt) |
-      // 'passed' | 'failed' (latest graded attempt's own outcome).
-      status: latest ? latest.status : 'pending',
-    };
-  });
+      // `latest` (the true most recent attempt, whatever its status) still
+      // drives canResume below — resuming is always about THAT one. But
+      // what's DISPLAYED as this quiz's status/score is `displayAttempt`: a
+      // passed attempt wins over everything else, so e.g. Attempt 1 =
+      // Failed, Attempt 2 = Passed always shows "Passed" here, never a
+      // later failed retake hiding an earlier pass, and never the reverse
+      // (a failed retake after an already-passed attempt can't downgrade
+      // the shown result either).
+      const latest = quizAttempts[0] || null;
+      const displayAttempt = pickDisplayAttempt(quizAttempts);
+      const graded = quizAttempts.filter((a) => a.status !== 'in-progress');
+      const bestPercentage = graded.length ? Math.max(...graded.map((a) => a.percentage)) : null;
+      // Clamped at MAX_QUIZ_ATTEMPTS — never displays a count like "3/2"
+      // even if a stray extra attempt document exists (e.g. from before
+      // the cap was enforced). The real cap enforcement (blocking a 3rd
+      // attempt from ever being created) is entirely separate, in
+      // startQuizAttempt, and unaffected by this display-only clamp.
+      const attemptsUsed = cappedAttemptsUsed(quizAttempts.length);
+      const availability = getQuizAvailability(q);
+
+      return {
+        _id: q._id,
+        title: q.title,
+        courseName: q.course?.name,
+        totalQuestions: q.questions.length,
+        durationMinutes: q.durationMinutes,
+        totalMarks: q.totalMarks,
+        startAt: q.startAt,
+        endAt: q.endAt,
+        // 'not-started' | 'available' | 'expired' — the quiz's own time
+        // window, independent of this student's attempt status below.
+        availability,
+        availabilityMessage: AVAILABILITY_MESSAGES[availability],
+        maxAttempts: MAX_QUIZ_ATTEMPTS,
+        attemptsUsed,
+        attemptsRemaining: Math.max(0, MAX_QUIZ_ATTEMPTS - attemptsUsed),
+        attemptsCount: cappedAttemptsUsed(graded.length),
+        latestAttempt: displayAttempt
+          ? { status: displayAttempt.status, percentage: displayAttempt.percentage, score: displayAttempt.score, attemptNumber: displayAttempt.attemptNumber }
+          : null,
+        bestPercentage,
+        // 'pending' (never attempted) | 'in-progress' (resumable — only
+        // when the true latest attempt is genuinely still open, see
+        // canResume) | 'passed' | 'failed' (the DISPLAYED attempt's own
+        // outcome — a pass, if one exists, else the true latest).
+        status: displayAttempt ? displayAttempt.status : 'pending',
+        // Explicit, server-computed "should Resume be offered" — always
+        // about the TRUE latest attempt (never the displayed/passed one),
+        // so a student who passed attempt 1 but has attempt 2 genuinely
+        // in progress still sees "Passed" as the result AND can Resume.
+        canResume: canResumeAttempt(latest),
+      };
+    })
+  );
 
   res.json({ success: true, data });
 });
@@ -565,7 +753,15 @@ const getQuizInfo = asyncHandler(async (req, res) => {
   }
 
   const attempts = await QuizAttempt.find({ student: student._id, quiz: quiz._id }).sort({ attemptNumber: -1 });
-  const inProgress = attempts.find((a) => a.status === 'in-progress' && (!a.deadline || a.deadline > new Date()));
+  await Promise.all(attempts.map((a) => closeExpiredAttempt(quiz, a)));
+  // attempts[0] is the latest (sorted desc above) — the same "one attempt
+  // may ever be in-progress at a time" invariant startQuizAttempt enforces
+  // means this and `.find(...)` below agree, but deriving both from the
+  // same latest attempt keeps this in lockstep with getQuizzes's own
+  // canResume computation rather than a second implementation.
+  const latest = attempts[0] || null;
+  const inProgress = attempts.find((a) => a.status === 'in-progress');
+  const availability = getQuizAvailability(quiz);
 
   res.json({
     success: true,
@@ -580,7 +776,21 @@ const getQuizInfo = asyncHandler(async (req, res) => {
       totalMarks: quiz.totalMarks,
       durationMinutes: quiz.durationMinutes,
       passPercentage: QUIZ_PASS_PERCENTAGE,
-      attempts: attempts.map((a) => ({
+      startAt: quiz.startAt,
+      endAt: quiz.endAt,
+      availability,
+      availabilityMessage: AVAILABILITY_MESSAGES[availability],
+      maxAttempts: MAX_QUIZ_ATTEMPTS,
+      // Clamped at MAX_QUIZ_ATTEMPTS — see cappedAttemptsUsed's own comment
+      // in quizGrading.js (never displays a count like "3/2").
+      attemptsUsed: cappedAttemptsUsed(attempts.length),
+      attemptsRemaining: Math.max(0, MAX_QUIZ_ATTEMPTS - attempts.length),
+      // Once any attempt has passed, a failed attempt is no longer shown —
+      // the pass is this quiz's qualifying result, so a failed retake (or
+      // an earlier failed attempt the student later passed past) is hidden
+      // rather than left sitting alongside it. See visibleAttempts's own
+      // comment in quizGrading.js.
+      attempts: visibleAttempts(attempts).map((a) => ({
         attemptNumber: a.attemptNumber,
         status: a.status,
         score: a.score,
@@ -592,6 +802,9 @@ const getQuizInfo = asyncHandler(async (req, res) => {
       })),
       hasInProgressAttempt: Boolean(inProgress),
       inProgressAttemptId: inProgress?._id,
+      // Same explicit flag getQuizzes returns — see canResumeAttempt's own
+      // comment for why the frontend should trust this over inferring it.
+      canResume: canResumeAttempt(latest),
     },
   });
 });
@@ -604,9 +817,20 @@ const getQuizInfo = asyncHandler(async (req, res) => {
 //          out (graded on whatever, possibly zero, answers it has) before
 //          a fresh one is started, so a student can never accumulate
 //          multiple simultaneous "in-progress" attempts at the same quiz.
-//          The Quiz schema has no attempt-limit field (verified), so no
-//          cap on the number of attempts is enforced here — only ever one
-//          concurrently in-progress.
+//
+//          Three server-side gates a client can never bypass, all
+//          re-checked on every call (never trusted from a prior response):
+//            1. The quiz's own start/end window (server clock only —
+//               req.body/query never supplies "now").
+//            2. The 2-attempt cap (MAX_QUIZ_ATTEMPTS) — counted fresh from
+//               the database every time, not from anything cached client-side.
+//            3. Race-safety: QuizAttempt's existing {student,quiz,attemptNumber}
+//               unique index (see QuizAttempt.js) is the actual source of
+//               truth — two concurrent requests both computing the same next
+//               attemptNumber can only ever result in ONE successful insert;
+//               the loser's duplicate-key error is caught below and
+//               resolved by re-reading the true current state rather than
+//               either creating a 3rd attempt or surfacing a raw 500.
 // @route   POST /api/student/me/quizzes/:quizId/start
 // @access  Private (STUDENT)
 const startQuizAttempt = asyncHandler(async (req, res) => {
@@ -633,25 +857,68 @@ const startQuizAttempt = asyncHandler(async (req, res) => {
   }
 
   let attempt = await QuizAttempt.findOne({ student: student._id, quiz: quiz._id, status: 'in-progress' });
+  if (attempt) await closeExpiredAttempt(quiz, attempt);
+  if (attempt?.status !== 'in-progress') attempt = null;
 
-  if (attempt && attempt.deadline && new Date() > attempt.deadline) {
-    const result = gradeAttempt(quiz, attempt.answers);
-    Object.assign(attempt, result, { submittedAt: attempt.deadline, late: true });
-    await attempt.save();
-    attempt = null;
-  }
-
+  // No resumable attempt — starting a genuinely NEW one, so the
+  // availability window and the attempt cap both apply. Neither applies to
+  // a plain resume above: an attempt already legitimately in progress
+  // (started inside the window, not yet past its own — window-capped —
+  // deadline) may always be continued to its natural end.
   if (!attempt) {
-    const priorAttempts = await QuizAttempt.countDocuments({ student: student._id, quiz: quiz._id });
-    const startedAt = new Date();
-    const deadline = quiz.durationMinutes ? new Date(startedAt.getTime() + quiz.durationMinutes * 60000) : null;
-    attempt = await QuizAttempt.create({
-      student: student._id,
-      quiz: quiz._id,
-      attemptNumber: priorAttempts + 1,
-      startedAt,
-      deadline,
-    });
+    const availability = getQuizAvailability(quiz);
+    if (availability !== 'available') {
+      res.status(403);
+      throw new Error(AVAILABILITY_MESSAGES[availability]);
+    }
+
+    // Race-safe allocation: a single "count then create" is NOT enough on
+    // its own — two concurrent requests can each read the same stale count
+    // (e.g. both see 1 prior attempt) and each successfully insert a
+    // DIFFERENT next attemptNumber (2 and computed-differently), silently
+    // creating more than MAX_QUIZ_ATTEMPTS total. The unique
+    // {student,quiz,attemptNumber} index alone only stops two requests from
+    // claiming the exact SAME number — it doesn't stop the cap itself from
+    // being exceeded by two requests claiming two different numbers at
+    // once. So: loop re-reading the TRUE current count on every attempt (not
+    // a value cached from before this request started), and let the unique
+    // index reject any exact-number collision so a retry always recomputes
+    // against reality. Bounded at 5 rounds — enough for realistic
+    // concurrency (a double-click, a couple of open tabs), and any attempt
+    // that can't win a slot within that either hits the cap check (the
+    // overwhelmingly likely outcome) or fails closed below rather than ever
+    // risking a 3rd document.
+    let created = null;
+    for (let i = 0; i < 5 && !created; i += 1) {
+      const priorAttempts = await QuizAttempt.countDocuments({ student: student._id, quiz: quiz._id });
+      if (priorAttempts >= MAX_QUIZ_ATTEMPTS) {
+        res.status(403);
+        throw new Error('You have used both attempts for this quiz.');
+      }
+      const startedAt = new Date();
+      const deadline = computeAttemptDeadline(quiz, startedAt);
+      try {
+        created = await QuizAttempt.create({
+          student: student._id,
+          quiz: quiz._id,
+          attemptNumber: priorAttempts + 1,
+          startedAt,
+          deadline,
+        });
+      } catch (err) {
+        // E11000 on {student,quiz,attemptNumber} — another concurrent
+        // request won this exact slot between our count and our insert.
+        // Loop again: the next count will reflect that request's now-
+        // committed attempt, so this one either claims the real next slot
+        // or correctly hits the cap check above instead.
+        if (err?.code !== 11000) throw err;
+      }
+    }
+    if (!created) {
+      res.status(409);
+      throw new Error('Could not start the quiz right now — please try again.');
+    }
+    attempt = created;
   }
 
   res.json({
@@ -661,6 +928,12 @@ const startQuizAttempt = asyncHandler(async (req, res) => {
       attemptNumber: attempt.attemptNumber,
       startedAt: attempt.startedAt,
       deadline: attempt.deadline,
+      // Restores whatever was last autosaved (see saveQuizAttemptProgress
+      // below) so refreshing or resuming from another device/browser never
+      // silently loses answers already on file — the same server-stored
+      // `answers` field submitQuizAttempt has always graded from, just also
+      // handed back here instead of only being written to.
+      answers: attempt.answers.map((a) => ({ question: a.question, selectedOptions: a.selectedOptions })),
       quiz: {
         _id: quiz._id,
         title: quiz.title,
@@ -671,17 +944,14 @@ const startQuizAttempt = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Submit answers for the caller's own in-progress attempt. Ownership
-//          (attempt.student === req.student) is verified before anything
-//          else — the one guarantee that stops Student A from submitting,
-//          or even discovering the existence of, Student B's attempt.
-//          Already-submitted attempts are rejected (no silent
-//          overwrite/duplicate grading). Score/percentage/status are
-//          entirely server-computed from the authoritative Quiz document —
-//          nothing of the kind is ever read from the request body.
-// @route   POST /api/student/me/quiz-attempts/:attemptId/submit
+// @desc    Autosave the caller's own in-progress attempt's answers so far —
+//          called periodically while a student is taking the quiz, NOT a
+//          grading action (status/score/percentage are never touched here,
+//          only submitQuizAttempt computes those). Same ownership/expiry
+//          guards as submitQuizAttempt.
+// @route   PUT /api/student/me/quiz-attempts/:attemptId/progress
 // @access  Private (STUDENT)
-const submitQuizAttempt = asyncHandler(async (req, res) => {
+const saveQuizAttemptProgress = asyncHandler(async (req, res) => {
   const student = req.student;
   const attempt = await QuizAttempt.findById(req.params.attemptId);
   if (!attempt) {
@@ -702,6 +972,77 @@ const submitQuizAttempt = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Quiz not found');
   }
+  // If the attempt's own deadline has already passed, this is no longer
+  // "in progress, saving as you go" — close it out (graded, late) the same
+  // way every other read of an expired attempt does, and reject the save
+  // rather than silently accepting answers for a session that's already over.
+  if (await closeExpiredAttempt(quiz, attempt)) {
+    res.status(410);
+    throw new Error('This attempt has expired and was already submitted.');
+  }
+
+  const submittedAnswers = Array.isArray(req.body.answers) ? req.body.answers : [];
+  const questionIds = new Set(quiz.questions.map((q) => String(q._id)));
+  attempt.answers = submittedAnswers
+    .filter((a) => a && questionIds.has(String(a.question)))
+    .map((a) => ({
+      question: a.question,
+      selectedOptions: Array.isArray(a.selectedOptions) ? a.selectedOptions.map(Number).filter(Number.isInteger) : [],
+    }));
+  await attempt.save();
+
+  res.json({ success: true, data: { answeredCount: attempt.answers.filter((a) => a.selectedOptions.length).length } });
+});
+
+// @desc    Submit answers for the caller's own in-progress attempt. Ownership
+//          (attempt.student === req.student) is verified before anything
+//          else — the one guarantee that stops Student A from submitting,
+//          or even discovering the existence of, Student B's attempt.
+//          Already-submitted attempts are rejected (no silent
+//          overwrite/duplicate grading). Score/percentage/status are
+//          entirely server-computed from the authoritative Quiz document —
+//          nothing of the kind is ever read from the request body.
+//
+//          The deadline (attempt's own timer OR the quiz's own end
+//          date/time, whichever is hit first — see closeExpiredAttempt) is
+//          re-validated HERE, fresh, before a single answer from this
+//          request is accepted. If it's already passed, this attempt is
+//          closed out using whatever was last autosaved (see
+//          saveQuizAttemptProgress) — NOT the answers in this now-too-late
+//          request — and the submission itself is rejected. This is a hard
+//          stop: once expired, no further answers or submissions are ever
+//          accepted for this attempt, enforced here on the server
+//          regardless of what the client's own countdown timer did or
+//          didn't catch.
+// @route   POST /api/student/me/quiz-attempts/:attemptId/submit
+// @access  Private (STUDENT)
+const submitQuizAttempt = asyncHandler(async (req, res) => {
+  const student = req.student;
+  const attempt = await QuizAttempt.findById(req.params.attemptId);
+  if (!attempt) {
+    res.status(404);
+    throw new Error('Attempt not found');
+  }
+  if (String(attempt.student) !== String(student._id)) {
+    res.status(403);
+    throw new Error('Forbidden: this attempt does not belong to you');
+  }
+
+  const quiz = await Quiz.findById(attempt.quiz);
+  if (!quiz) {
+    res.status(404);
+    throw new Error('Quiz not found');
+  }
+
+  if (attempt.status === 'in-progress' && (await closeExpiredAttempt(quiz, attempt))) {
+    res.status(410);
+    throw new Error('The quiz deadline has passed. Your last saved answers were automatically submitted.');
+  }
+
+  if (attempt.status !== 'in-progress') {
+    res.status(400);
+    throw new Error('This attempt has already been submitted');
+  }
 
   const submittedAnswers = Array.isArray(req.body.answers) ? req.body.answers : [];
   // Only answers referencing a question that actually belongs to this quiz
@@ -715,13 +1056,12 @@ const submitQuizAttempt = asyncHandler(async (req, res) => {
       selectedOptions: Array.isArray(a.selectedOptions) ? a.selectedOptions.map(Number).filter(Number.isInteger) : [],
     }));
 
-  const late = Boolean(attempt.deadline) && new Date() > attempt.deadline;
   const result = gradeAttempt(quiz, cleanAnswers);
 
   attempt.answers = cleanAnswers;
   Object.assign(attempt, result);
   attempt.submittedAt = new Date();
-  attempt.late = late;
+  attempt.late = false;
   await attempt.save();
 
   res.json({
@@ -892,6 +1232,12 @@ const getMyProfile = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data: {
+      // The Student document's own _id — distinct from user.id (the User
+      // account). Added for the ID card (downloadStudentIdCard in
+      // utils/studentIdCard.js), which needs a stable identifier for its QR
+      // payload; additive only, nothing existing read this response shape
+      // expecting exactly the prior field set.
+      studentId: student._id,
       name: user.name,
       email: user.email,
       phone: user.phone,
@@ -906,6 +1252,9 @@ const getMyProfile = asyncHandler(async (req, res) => {
         enrollmentId: e._id,
         courseName: e.course?.name,
         batchCode: e.batch?.batchCode,
+        // Also added for the ID card — the badge shown under the student's
+        // photo, mirroring the Trainer card's own employeeId badge.
+        rollNumber: e.rollNumber,
         status: e.status,
       })),
     },
@@ -1055,10 +1404,12 @@ module.exports = {
   submitAssignment,
   getProgress,
   getAttendance,
+  markOwnAttendanceViaQr,
   getPayments,
   getQuizzes,
   getQuizInfo,
   startQuizAttempt,
+  saveQuizAttemptProgress,
   submitQuizAttempt,
   getQuizAttempt,
   getCourseDetails,

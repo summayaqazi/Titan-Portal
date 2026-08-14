@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, BookOpen, Eye, EyeOff, GraduationCap, KeyRound, Info, UserRound } from 'lucide-react';
 import PublicHeader from '../../components/public/PublicHeader';
+import PublicFooter from '../../components/public/PublicFooter';
 import { Button, FormField, Input, Select, Textarea, ImageUpload } from '../../components/common';
 import publicApi from '../../api/publicApi';
 
@@ -78,7 +79,18 @@ export default function Register() {
 
   const [allCourses, setAllCourses] = useState(null);
   const [selectedCourseId, setSelectedCourseId] = useState(routeCourseId || '');
-  const [courseDetail, setCourseDetail] = useState(location.state?.course?._id === routeCourseId ? location.state.course : null);
+  // Bug fix (pre-existing, found while verifying this page live): when
+  // landing on plain /register with neither a route param nor router state
+  // (a bookmark, a typed URL, browser back/forward), `routeCourseId` and
+  // `location.state?.course?._id` are BOTH `undefined`, so the old
+  // `=== routeCourseId` check spuriously matched and then read
+  // `location.state.course` unguarded — throwing on the `null` state,
+  // crashing the whole page. Fully optional-chained now, and the id
+  // comparison only ever "matches" when a course id genuinely came through
+  // router state, never as a side effect of both sides being undefined.
+  const [courseDetail, setCourseDetail] = useState(
+    routeCourseId && location.state?.course?._id === routeCourseId ? location.state.course : null
+  );
   const [courseLoadError, setCourseLoadError] = useState('');
 
   const [form, setForm] = useState(emptyForm);
@@ -153,9 +165,13 @@ export default function Register() {
     if (!form.gender) errors.gender = 'Please select a gender';
     if (!form.address.trim()) errors.address = 'Address is required';
     if (!form.highestQualification) errors.highestQualification = 'Please select a qualification';
+    // Shown through ImageUpload's own error slot (imageError), not
+    // fieldErrors — same as its file-type/size errors, so there's exactly
+    // one message in one place instead of two for the same field.
+    if (!profilePictureFile) setImageError('A profile photo is required to register');
 
     setFieldErrors(errors);
-    return Object.keys(errors).length === 0;
+    return Object.keys(errors).length === 0 && Boolean(profilePictureFile);
   };
 
   const handleSubmit = async (e) => {
@@ -203,191 +219,206 @@ export default function Register() {
           <ArrowLeft size={15} /> Back to courses
         </Link>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-6 sm:p-8">
-          <h1 className="mb-1 text-xl font-semibold text-slate-800">Student Registration</h1>
-          <p className="mb-6 text-sm text-slate-500">
-            Fill in your details below to apply. Your application will be reviewed by the institute before your Student
-            Portal account becomes active.
-          </p>
+        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          {/* Same thin navy brand accent as Course Details / Job Details. */}
+          <div className="h-1.5 bg-(--color-sidebar)" />
+          <div className="p-6 sm:p-8">
+            <h1 className="mb-1 text-xl font-semibold text-slate-800">Student Registration</h1>
+            <p className="mb-6 text-sm text-slate-500">
+              Fill in your details below to apply. Your application will be reviewed by the institute before your
+              Student Portal account becomes active.
+            </p>
 
-          <form onSubmit={handleSubmit} noValidate>
-            <h2 className="mb-3 text-sm font-semibold text-slate-700">Course</h2>
+            <form onSubmit={handleSubmit} noValidate>
+              <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <BookOpen size={16} className="text-primary-600" /> Course
+              </h2>
 
-            {!courseLocked && (
-              <FormField label="Select Course" htmlFor="course" required error={fieldErrors.course}>
-                <Select
-                  id="course"
-                  value={selectedCourseId}
-                  onChange={(e) => {
-                    setSelectedCourseId(e.target.value);
-                  }}
-                >
-                  <option value="">Select a course</option>
-                  {(allCourses || []).map((c) => (
-                    <option key={c._id} value={c._id}>
-                      {c.name}
+              {!courseLocked && (
+                <FormField label="Select Course" htmlFor="course" required error={fieldErrors.course}>
+                  <Select
+                    id="course"
+                    value={selectedCourseId}
+                    onChange={(e) => {
+                      setSelectedCourseId(e.target.value);
+                    }}
+                  >
+                    <option value="">Select a course</option>
+                    {(allCourses || []).map((c) => (
+                      <option key={c._id} value={c._id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </Select>
+                </FormField>
+              )}
+
+              {courseLocked && courseDetail && (
+                <div className="mb-4 flex items-center justify-between rounded-md bg-slate-50 px-3 py-2 text-sm">
+                  <span className="font-medium text-slate-700">{courseDetail.name}</span>
+                  <Link to="/courses" className="text-xs text-primary-700 hover:underline">
+                    Change course
+                  </Link>
+                </div>
+              )}
+
+              {courseLoadError && <p className="mb-4 text-xs text-red-600">{courseLoadError}</p>}
+
+              {selectedCourseId && (
+                <FormField label="Select Batch" htmlFor="batch" required error={fieldErrors.batch}>
+                  <Select id="batch" value={form.batch} onChange={handleChange('batch')} disabled={!courseDetail}>
+                    <option value="">
+                      {courseDetail ? 'Select a batch' : 'Loading batches…'}
                     </option>
-                  ))}
-                </Select>
-              </FormField>
-            )}
+                    {availableBatches.map((b) => (
+                      <option key={b._id} value={b._id}>
+                        {batchOptionLabel(b)}
+                      </option>
+                    ))}
+                  </Select>
+                  {courseDetail && availableBatches.length === 0 && (
+                    <p className="mt-1 text-xs text-amber-600">No batches are currently open for this course.</p>
+                  )}
+                </FormField>
+              )}
 
-            {courseLocked && courseDetail && (
-              <div className="mb-4 flex items-center justify-between rounded-md bg-slate-50 px-3 py-2 text-sm">
-                <span className="font-medium text-slate-700">{courseDetail.name}</span>
-                <Link to="/courses" className="text-xs text-primary-700 hover:underline">
-                  Change course
-                </Link>
+              <h2 className="mb-3 mt-6 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <UserRound size={16} className="text-primary-600" /> Personal Information
+              </h2>
+
+              <FormField label="Full Name" htmlFor="name" required error={fieldErrors.name}>
+                <Input id="name" value={form.name} onChange={handleChange('name')} autoComplete="name" />
+              </FormField>
+              <FormField label="Father's Name" htmlFor="fatherName" required error={fieldErrors.fatherName}>
+                <Input id="fatherName" value={form.fatherName} onChange={handleChange('fatherName')} />
+              </FormField>
+              <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+                <FormField label="Email" htmlFor="email" required error={fieldErrors.email}>
+                  <Input id="email" type="email" value={form.email} onChange={handleChange('email')} autoComplete="email" />
+                </FormField>
+                <FormField label="Phone" htmlFor="phone" required error={fieldErrors.phone}>
+                  <Input id="phone" value={form.phone} onChange={handleChange('phone')} placeholder="03xx-xxxxxxx" />
+                </FormField>
               </div>
-            )}
+              <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+                <FormField label="CNIC" htmlFor="cnic" required error={fieldErrors.cnic}>
+                  <Input id="cnic" value={form.cnic} onChange={handleCnicChange('cnic')} placeholder="xxxxx-xxxxxxx-x" maxLength={15} />
+                </FormField>
+                <FormField label="Father's CNIC" htmlFor="fatherCnic" error={fieldErrors.fatherCnic}>
+                  <Input
+                    id="fatherCnic"
+                    value={form.fatherCnic}
+                    onChange={handleCnicChange('fatherCnic')}
+                    placeholder="xxxxx-xxxxxxx-x"
+                    maxLength={15}
+                  />
+                </FormField>
+              </div>
+              <FormField label="Father's Contact Number" htmlFor="fatherContactNumber" error={fieldErrors.fatherContactNumber}>
+                <Input id="fatherContactNumber" value={form.fatherContactNumber} onChange={handleChange('fatherContactNumber')} />
+              </FormField>
+              <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+                <FormField label="Date of Birth" htmlFor="dateOfBirth" required error={fieldErrors.dateOfBirth}>
+                  <Input id="dateOfBirth" type="date" value={form.dateOfBirth} onChange={handleChange('dateOfBirth')} />
+                </FormField>
+                <FormField label="Gender" htmlFor="gender" required error={fieldErrors.gender}>
+                  <Select id="gender" value={form.gender} onChange={handleChange('gender')}>
+                    <option value="">Select gender</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="other">Other</option>
+                  </Select>
+                </FormField>
+              </div>
+              <FormField label="Address" htmlFor="address" required error={fieldErrors.address}>
+                <Textarea id="address" value={form.address} onChange={handleChange('address')} />
+              </FormField>
 
-            {courseLoadError && <p className="mb-4 text-xs text-red-600">{courseLoadError}</p>}
+              <h2 className="mb-3 mt-6 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <GraduationCap size={16} className="text-primary-600" /> Education
+              </h2>
 
-            {selectedCourseId && (
-              <FormField label="Select Batch" htmlFor="batch" required error={fieldErrors.batch}>
-                <Select id="batch" value={form.batch} onChange={handleChange('batch')} disabled={!courseDetail}>
-                  <option value="">
-                    {courseDetail ? 'Select a batch' : 'Loading batches…'}
-                  </option>
-                  {availableBatches.map((b) => (
-                    <option key={b._id} value={b._id}>
-                      {batchOptionLabel(b)}
-                    </option>
-                  ))}
-                </Select>
-                {courseDetail && availableBatches.length === 0 && (
-                  <p className="mt-1 text-xs text-amber-600">No batches are currently open for this course.</p>
-                )}
-              </FormField>
-            )}
-
-            <h2 className="mb-3 mt-6 text-sm font-semibold text-slate-700">Personal Information</h2>
-
-            <FormField label="Full Name" htmlFor="name" required error={fieldErrors.name}>
-              <Input id="name" value={form.name} onChange={handleChange('name')} autoComplete="name" />
-            </FormField>
-            <FormField label="Father's Name" htmlFor="fatherName" required error={fieldErrors.fatherName}>
-              <Input id="fatherName" value={form.fatherName} onChange={handleChange('fatherName')} />
-            </FormField>
-            <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
-              <FormField label="Email" htmlFor="email" required error={fieldErrors.email}>
-                <Input id="email" type="email" value={form.email} onChange={handleChange('email')} autoComplete="email" />
-              </FormField>
-              <FormField label="Phone" htmlFor="phone" required error={fieldErrors.phone}>
-                <Input id="phone" value={form.phone} onChange={handleChange('phone')} placeholder="03xx-xxxxxxx" />
-              </FormField>
-            </div>
-            <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
-              <FormField label="CNIC" htmlFor="cnic" required error={fieldErrors.cnic}>
-                <Input id="cnic" value={form.cnic} onChange={handleCnicChange('cnic')} placeholder="xxxxx-xxxxxxx-x" maxLength={15} />
-              </FormField>
-              <FormField label="Father's CNIC" htmlFor="fatherCnic" error={fieldErrors.fatherCnic}>
-                <Input
-                  id="fatherCnic"
-                  value={form.fatherCnic}
-                  onChange={handleCnicChange('fatherCnic')}
-                  placeholder="xxxxx-xxxxxxx-x"
-                  maxLength={15}
-                />
-              </FormField>
-            </div>
-            <FormField label="Father's Contact Number" htmlFor="fatherContactNumber" error={fieldErrors.fatherContactNumber}>
-              <Input id="fatherContactNumber" value={form.fatherContactNumber} onChange={handleChange('fatherContactNumber')} />
-            </FormField>
-            <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
-              <FormField label="Date of Birth" htmlFor="dateOfBirth" required error={fieldErrors.dateOfBirth}>
-                <Input id="dateOfBirth" type="date" value={form.dateOfBirth} onChange={handleChange('dateOfBirth')} />
-              </FormField>
-              <FormField label="Gender" htmlFor="gender" required error={fieldErrors.gender}>
-                <Select id="gender" value={form.gender} onChange={handleChange('gender')}>
-                  <option value="">Select gender</option>
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
+              <FormField label="Last Qualification" htmlFor="highestQualification" required error={fieldErrors.highestQualification}>
+                <Select
+                  id="highestQualification"
+                  value={form.highestQualification}
+                  onChange={handleChange('highestQualification')}
+                >
+                  <option value="">Select qualification</option>
+                  <option value="matric">Matric</option>
+                  <option value="intermediate">Intermediate</option>
+                  <option value="bachelors">Bachelors</option>
+                  <option value="masters">Masters</option>
                   <option value="other">Other</option>
                 </Select>
               </FormField>
-            </div>
-            <FormField label="Address" htmlFor="address" required error={fieldErrors.address}>
-              <Textarea id="address" value={form.address} onChange={handleChange('address')} />
-            </FormField>
-
-            <h2 className="mb-3 mt-6 text-sm font-semibold text-slate-700">Education</h2>
-
-            <FormField label="Last Qualification" htmlFor="highestQualification" required error={fieldErrors.highestQualification}>
-              <Select
-                id="highestQualification"
-                value={form.highestQualification}
-                onChange={handleChange('highestQualification')}
-              >
-                <option value="">Select qualification</option>
-                <option value="matric">Matric</option>
-                <option value="intermediate">Intermediate</option>
-                <option value="bachelors">Bachelors</option>
-                <option value="masters">Masters</option>
-                <option value="other">Other</option>
-              </Select>
-            </FormField>
-            <FormField label="Computer Proficiency" htmlFor="computerProficiency">
-              <Select id="computerProficiency" value={form.computerProficiency} onChange={handleChange('computerProficiency')}>
-                <option value="">Select level</option>
-                <option value="none">None</option>
-                <option value="basic">Basic</option>
-                <option value="intermediate">Intermediate</option>
-                <option value="advanced">Advanced</option>
-              </Select>
-            </FormField>
-
-            <h2 className="mb-3 mt-6 text-sm font-semibold text-slate-700">Additional Information</h2>
-
-            <FormField label="Laptop Availability" htmlFor="laptopAvailability">
-              <Select id="laptopAvailability" value={form.laptopAvailability} onChange={handleChange('laptopAvailability')}>
-                <option value="">Prefer not to say</option>
-                <option value="true">I have a laptop</option>
-                <option value="false">I don't have a laptop</option>
-              </Select>
-            </FormField>
-            <FormField label="Profile Image" htmlFor="profilePicture">
-              <ImageUpload onChange={setProfilePictureFile} error={imageError} setError={setImageError} />
-            </FormField>
-
-            <h2 className="mb-3 mt-6 text-sm font-semibold text-slate-700">Account</h2>
-            <p className="mb-3 text-xs text-slate-500">
-              Choose a password for your Student Portal account. You'll be able to sign in once your application is
-              approved.
-            </p>
-            <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
-              <FormField label="Password" htmlFor="password" required error={fieldErrors.password}>
-                <PasswordField
-                  id="password"
-                  value={form.password}
-                  onChange={handleChange('password')}
-                  autoComplete="new-password"
-                  placeholder="••••••••"
-                />
+              <FormField label="Computer Proficiency" htmlFor="computerProficiency">
+                <Select id="computerProficiency" value={form.computerProficiency} onChange={handleChange('computerProficiency')}>
+                  <option value="">Select level</option>
+                  <option value="none">None</option>
+                  <option value="basic">Basic</option>
+                  <option value="intermediate">Intermediate</option>
+                  <option value="advanced">Advanced</option>
+                </Select>
               </FormField>
-              <FormField label="Confirm Password" htmlFor="confirmPassword" required error={fieldErrors.confirmPassword}>
-                <PasswordField
-                  id="confirmPassword"
-                  value={form.confirmPassword}
-                  onChange={handleChange('confirmPassword')}
-                  autoComplete="new-password"
-                  placeholder="••••••••"
-                />
+
+              <h2 className="mb-3 mt-6 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <Info size={16} className="text-primary-600" /> Additional Information
+              </h2>
+
+              <FormField label="Laptop Availability" htmlFor="laptopAvailability">
+                <Select id="laptopAvailability" value={form.laptopAvailability} onChange={handleChange('laptopAvailability')}>
+                  <option value="">Prefer not to say</option>
+                  <option value="true">I have a laptop</option>
+                  <option value="false">I don't have a laptop</option>
+                </Select>
               </FormField>
-            </div>
-            <p className="mb-4 text-xs text-slate-400">
-              Already applied before? Enter your existing account's email and password here to submit another course
-              application to the same account.
-            </p>
+              <FormField label="Profile Image" htmlFor="profilePicture" required>
+                <ImageUpload onChange={setProfilePictureFile} error={imageError} setError={setImageError} />
+              </FormField>
 
-            {serverError && <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{serverError}</p>}
+              <h2 className="mb-3 mt-6 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <KeyRound size={16} className="text-primary-600" /> Account
+              </h2>
+              <p className="mb-3 text-xs text-slate-500">
+                Choose a password for your Student Portal account. You'll be able to sign in once your application is
+                approved.
+              </p>
+              <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+                <FormField label="Password" htmlFor="password" required error={fieldErrors.password}>
+                  <PasswordField
+                    id="password"
+                    value={form.password}
+                    onChange={handleChange('password')}
+                    autoComplete="new-password"
+                    placeholder="••••••••"
+                  />
+                </FormField>
+                <FormField label="Confirm Password" htmlFor="confirmPassword" required error={fieldErrors.confirmPassword}>
+                  <PasswordField
+                    id="confirmPassword"
+                    value={form.confirmPassword}
+                    onChange={handleChange('confirmPassword')}
+                    autoComplete="new-password"
+                    placeholder="••••••••"
+                  />
+                </FormField>
+              </div>
+              <p className="mb-4 text-xs text-slate-400">
+                Already applied before? Enter your existing account's email and password here to submit another
+                course application to the same account.
+              </p>
 
-            <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? 'Submitting…' : 'Submit Application'}
-            </Button>
-          </form>
+              {serverError && <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{serverError}</p>}
+
+              <Button type="submit" className="w-full" disabled={submitting}>
+                {submitting ? 'Submitting…' : 'Submit Application'}
+              </Button>
+            </form>
+          </div>
         </div>
       </main>
+      <PublicFooter />
     </div>
   );
 }

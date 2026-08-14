@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { PageContainer } from '../../components/common';
 import TrainerCheckInPanel from '../../components/attendance/TrainerCheckInPanel';
 import batchesApi from '../../api/batchesApi';
@@ -13,6 +14,7 @@ export default function TrainerMarkAttendance() {
   const { can } = useAuth();
   const canMark = can('attendance', 'create');
   const campusFilter = useAdminCampusFilter();
+  const navigate = useNavigate();
   const [batches, setBatches] = useState([]);
   const [trainers, setTrainers] = useState([]);
 
@@ -23,7 +25,7 @@ export default function TrainerMarkAttendance() {
   }, []);
 
   return (
-    <PageContainer title="Mark Trainer Attendance" description="Check in a trainer for a batch session">
+    <PageContainer title="Mark Trainer Attendance" description="Check in a trainer for a batch session" onBack={() => navigate(-1)}>
       <TrainerCheckInPanel trainers={trainers} batches={batches} canMark={canMark} />
     </PageContainer>
   );

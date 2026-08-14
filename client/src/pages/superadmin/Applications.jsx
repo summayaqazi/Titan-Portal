@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Eye } from 'lucide-react';
-import { PageContainer, Table, Pagination, Select, StatusBadge } from '../../components/common';
+import { PageContainer, Table, Pagination, Select, StatusBadge, Avatar } from '../../components/common';
 import useCrudResource from '../../hooks/useCrudResource';
 import applicationsApi from '../../api/applicationsApi';
 import ApplicationDetailDrawer from '../../components/applications/ApplicationDetailDrawer';
+import { resolveFileUrl } from '../../utils/fileUrl';
 
 const JOB_TYPE_LABELS = { full_time: 'Full Time', part_time: 'Part Time', contract: 'Contract' };
 const STATUS_OPTIONS = [
@@ -25,11 +27,21 @@ function formatDate(dateStr) {
 // every other admin list page already uses). Row click opens the detail
 // drawer, which owns the actual Shortlist/Approve/Reject actions.
 export default function Applications() {
+  // Lets the Super Admin Dashboard's "Pending Job Applications" card land
+  // here pre-filtered (?status=pending) — read once on mount only, same as
+  // every other page's own filter state afterward (changing the dropdown
+  // doesn't rewrite the URL, matching this app's existing filter UX).
+  const [searchParams] = useSearchParams();
+  const initialStatus = searchParams.get('status');
   const { items, total, totalPages, page, setPage, filters, setFilter, loading, error, refetch } = useCrudResource(
     applicationsApi.list,
-    { limit: 10 }
+    { limit: 10, initialFilters: initialStatus ? { status: initialStatus } : {} }
   );
   const [selected, setSelected] = useState(null);
+  // Super-Admin-only route (Admin has no access to this page at all — see
+  // application.routes.js), so this is unconditional, unlike the shared
+  // Jobs.jsx/Students.jsx pages' role-gated onBack.
+  const navigate = useNavigate();
 
   const handleChanged = (updated) => {
     setSelected(updated);
@@ -41,9 +53,15 @@ export default function Applications() {
       key: 'applicant',
       header: 'Applicant',
       render: (row) => (
-        <div>
-          <p className="font-medium text-slate-800">{row.applicant?.name || '—'}</p>
-          <p className="text-xs text-slate-400">{row.applicant?.email}</p>
+        <div className="flex items-center gap-2.5">
+          {/* The applicant's own submitted photo (Application.photoPath) —
+              same field the detail drawer shows, distinct from the job's
+              own image. */}
+          <Avatar src={resolveFileUrl(row.photoPath)} name={row.applicant?.name} size={32} />
+          <div>
+            <p className="font-medium text-slate-800">{row.applicant?.name || '—'}</p>
+            <p className="text-xs text-slate-400">{row.applicant?.email}</p>
+          </div>
         </div>
       ),
     },
@@ -53,7 +71,12 @@ export default function Applications() {
       render: (row) => (
         <div>
           <p className="text-slate-700">{row.job?.title || 'Job no longer available'}</p>
-          {row.job && <p className="text-xs text-slate-400">{JOB_TYPE_LABELS[row.job.jobType] || row.job.jobType}</p>}
+          {row.job && (
+            <p className="text-xs text-slate-400">
+              {JOB_TYPE_LABELS[row.job.jobType] || row.job.jobType}
+              {row.job.city ? ` · ${row.job.city}` : ''}
+            </p>
+          )}
         </div>
       ),
     },
@@ -77,7 +100,11 @@ export default function Applications() {
   ];
 
   return (
-    <PageContainer title="Applications" description="Review job applications and manage their status">
+    <PageContainer
+      title="Applications"
+      description="Review job applications and manage their status"
+      onBack={() => navigate(-1)}
+    >
       <div className="mb-4 w-full max-w-[10rem]">
         <Select value={filters.status || ''} onChange={(e) => setFilter('status', e.target.value || undefined)}>
           {STATUS_OPTIONS.map((opt) => (

@@ -1,14 +1,20 @@
 import QRCode from 'qrcode';
 import { resolveFileUrl } from './fileUrl';
 
-// Renders the logged-in Trainer's ID card entirely on an offscreen <canvas>
-// and downloads it as a PNG. Canvas (not html2canvas over the live DOM) is
-// used deliberately: it can't produce a half-rendered/blank capture from a
-// slow-loading image or web font, every asset (photo, QR, crest) is loaded
-// and confirmed *before* a single pixel is drawn, and a failed/missing
-// photo falls back to an initials avatar instead of ever leaving a broken
-// image on the card. Colors below mirror the app's primary-* palette
-// (client/src/index.css) so the card matches the rest of the UI.
+// Renders the logged-in Trainer's ID card(s) entirely on an offscreen
+// <canvas> and downloads them as PNGs. Canvas (not html2canvas over the
+// live DOM) is used deliberately: it can't produce a half-rendered/blank
+// capture from a slow-loading image or web font, every asset (photo, QR,
+// crest) is loaded and confirmed *before* a single pixel is drawn, and a
+// failed/missing photo falls back to an initials avatar instead of ever
+// leaving a broken image on the card. Colors below mirror the app's
+// primary-* palette (client/src/index.css) so the card matches the rest of
+// the UI.
+//
+// Card is portrait/vertical (not the old landscape layout) and one
+// separate card is generated per assigned course — a trainer assigned to
+// two courses downloads two PNGs, each carrying that course's own
+// name/code, not a single card listing every course.
 const COLORS = {
   headerFrom: '#1a4f7a', // primary-800
   headerTo: '#2877b9', // primary-600
@@ -22,6 +28,20 @@ const COLORS = {
   avatarBg: '#e2eef9', // primary-100
   avatarText: '#216297', // primary-700
 };
+
+// Card geometry — width is fixed (a real portrait ID card's proportions);
+// height is NOT — it's derived per card by rendering once on a throwaway
+// canvas to measure how tall the content actually is (see
+// renderCardToBlob), then re-rendered for real at that exact height. That
+// is what keeps every card fitting its own portrait canvas precisely,
+// however many detail rows/lines it ends up needing (course code, campus
+// list, optional qualification), with nothing ever clipped or leaving dead
+// space.
+const CARD_WIDTH = 380;
+const CARD_SCALE = 2;
+const CARD_PADDING = 18;
+const HEADER_HEIGHT = 96;
+const PHOTO_RADIUS = 44;
 
 function loadImage(src) {
   return new Promise((resolve) => {
@@ -95,8 +115,8 @@ function drawAvatar(ctx, img, name, cx, cy, r) {
 }
 
 // Greedy word-wrap capped at `maxLines`, ellipsizing the final line if the
-// text doesn't fit — so a trainer with an unusually long course/campus list
-// can never stretch or overflow the fixed-size card.
+// text doesn't fit — so a trainer with an unusually long course/campus name
+// can never stretch or overflow the card.
 function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
   const words = text.split(' ');
   const lines = [];
@@ -129,8 +149,23 @@ function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
   return y + lines.length * lineHeight;
 }
 
+// Single-line variant for centered text (name/title) — truncates with an
+// ellipsis instead of wrapping, since it's drawn centered on one line.
+function drawCenteredEllipsis(ctx, text, cx, y, maxWidth) {
+  let t = text;
+  if (ctx.measureText(t).width > maxWidth) {
+    while (t.length > 1 && ctx.measureText(`${t}…`).width > maxWidth) {
+      t = t.slice(0, -1);
+    }
+    t = `${t}…`;
+  }
+  ctx.fillText(t, cx, y);
+}
+
 // Builds a small, non-sensitive verification payload — never a password or
-// anything auth-related, per the ID card spec.
+// anything auth-related, per the ID card spec. Trainer-level (not
+// per-course), so it's generated once and reused across every course card
+// below.
 function buildQrPayload(user, trainerProfile) {
   const lines = [
     'TITAN Institute — Trainer ID',
@@ -145,6 +180,196 @@ function sanitizeFileName(value) {
   return (value || 'trainer').replace(/[^a-z0-9-_]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
 }
 
+// Draws the full card top-to-bottom into `ctx` and returns the Y-coordinate
+// of its final drawn pixel (the content height). Called twice per card by
+// renderCardToBlob: once on a scratch canvas purely to measure that
+// content height (drawBackground: false — no point painting a background
+// that's about to be thrown away), then again on a canvas sized exactly to
+// the result to actually produce the PNG. Because the draw calls are the
+// same both times, the measured height and the real card always agree —
+// nothing is ever clipped and there's never dead space at the bottom.
+function drawTrainerCard(ctx, { width, height, drawBackground }, { avatarImg, crestImg, qrImg, user, trainerProfile, course }) {
+  if (drawBackground) {
+    ctx.save();
+    roundedRectPath(ctx, 0, 0, width, height, 16);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.clip();
+  }
+
+  const gradient = ctx.createLinearGradient(0, 0, width, 0);
+  gradient.addColorStop(0, COLORS.headerFrom);
+  gradient.addColorStop(1, COLORS.headerTo);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, HEADER_HEIGHT);
+
+  const centerX = width / 2;
+  const crestSize = 36;
+  if (crestImg) ctx.drawImage(crestImg, centerX - crestSize / 2, 14, crestSize, crestSize);
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 17px Arial, sans-serif';
+  ctx.fillText('TITAN INSTITUTE', centerX, 14 + crestSize + 18);
+  ctx.fillStyle = '#e2eef9';
+  ctx.font = '600 10px Arial, sans-serif';
+  ctx.fillText('TRAINER IDENTIFICATION CARD', centerX, 14 + crestSize + 32);
+
+  // Photo
+  const photoCX = centerX;
+  const photoCY = HEADER_HEIGHT + CARD_PADDING + PHOTO_RADIUS;
+  drawAvatar(ctx, avatarImg, user?.name, photoCX, photoCY, PHOTO_RADIUS);
+
+  // Employee ID badge under the photo
+  ctx.font = '700 12px Arial, sans-serif';
+  const badgeText = trainerProfile.employeeId || '—';
+  const badgeTextWidth = ctx.measureText(badgeText).width;
+  const badgeW = badgeTextWidth + 20;
+  const badgeH = 22;
+  const badgeX = photoCX - badgeW / 2;
+  const badgeY = photoCY + PHOTO_RADIUS + 12;
+  roundedRectPath(ctx, badgeX, badgeY, badgeW, badgeH, badgeH / 2);
+  ctx.fillStyle = COLORS.badgeBg;
+  ctx.fill();
+  ctx.fillStyle = COLORS.badgeText;
+  ctx.textAlign = 'center';
+  ctx.fillText(badgeText, photoCX, badgeY + badgeH / 2 + 4);
+
+  let cursorY = badgeY + badgeH + 22;
+
+  ctx.fillStyle = COLORS.text;
+  ctx.font = '700 19px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  drawCenteredEllipsis(ctx, user?.name || 'Trainer', photoCX, cursorY, width - CARD_PADDING * 2);
+  cursorY += 8;
+
+  ctx.font = '700 10px Arial, sans-serif';
+  const tag = 'TRAINER';
+  const tagW = ctx.measureText(tag).width + 16;
+  roundedRectPath(ctx, photoCX - tagW / 2, cursorY, tagW, 18, 9);
+  ctx.fillStyle = COLORS.badgeBg;
+  ctx.fill();
+  ctx.fillStyle = COLORS.badgeText;
+  ctx.fillText(tag, photoCX, cursorY + 13);
+  cursorY += 18 + 18;
+
+  ctx.strokeStyle = COLORS.border;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(CARD_PADDING, cursorY);
+  ctx.lineTo(width - CARD_PADDING, cursorY);
+  ctx.stroke();
+  cursorY += 18;
+
+  // Detail rows: this course, its code, the trainer's assigned campus(es)
+  // (campuses aren't mapped per-course in the data model, so this stays
+  // the trainer's full campus list on every one of their course cards,
+  // same as it was on the single combined card), then qualification if set.
+  ctx.textAlign = 'left';
+  const colX = CARD_PADDING;
+  const colMaxWidth = width - CARD_PADDING * 2;
+  const detailRow = (label, value) => {
+    ctx.fillStyle = COLORS.faint;
+    ctx.font = '600 9px Arial, sans-serif';
+    ctx.fillText(label.toUpperCase(), colX, cursorY);
+    cursorY += 12;
+    ctx.fillStyle = COLORS.text;
+    ctx.font = '500 13px Arial, sans-serif';
+    cursorY = drawWrappedText(ctx, value, colX, cursorY, colMaxWidth, 16, 2);
+    cursorY += 12;
+  };
+
+  // Email is deliberately never shown on the card — course/employee
+  // details only.
+  detailRow('Course', course?.name || 'Not assigned yet');
+  if (course?.code) detailRow('Course Code', course.code);
+
+  const campusNames = (trainerProfile.campuses || []).map((c) => c.name).filter(Boolean);
+  detailRow('Campus', campusNames.length ? campusNames.join(', ') : '—');
+
+  if (trainerProfile.qualification) {
+    detailRow('Qualification', trainerProfile.qualification);
+  }
+
+  cursorY += 4;
+
+  // QR code
+  const qrSize = 116;
+  const qrX = photoCX - qrSize / 2;
+  const qrY = cursorY;
+  if (qrImg) {
+    ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
+    ctx.strokeStyle = COLORS.border;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(qrX, qrY, qrSize, qrSize);
+    cursorY = qrY + qrSize + 14;
+    ctx.fillStyle = COLORS.faint;
+    ctx.font = '500 9px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Scan to verify', photoCX, cursorY);
+    cursorY += 18;
+  }
+
+  // Footer
+  ctx.strokeStyle = COLORS.border;
+  ctx.beginPath();
+  ctx.moveTo(CARD_PADDING, cursorY);
+  ctx.lineTo(width - CARD_PADDING, cursorY);
+  ctx.stroke();
+  cursorY += 14;
+  ctx.fillStyle = COLORS.faint;
+  ctx.font = '500 9px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(`Property of TITAN Institute • Issued ${new Date().toLocaleDateString()}`, photoCX, cursorY);
+  cursorY += CARD_PADDING;
+
+  if (drawBackground) {
+    ctx.restore();
+    // Outer border, drawn after restore() so it sits on top, unclipped.
+    roundedRectPath(ctx, 0.5, 0.5, width - 1, height - 1, 16);
+    ctx.strokeStyle = COLORS.border;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  return cursorY;
+}
+
+async function renderCardToBlob(assets, drawFn) {
+  // Pass 1 — measure. Canvas size here is irrelevant (nothing from it is
+  // ever exported); only the returned content height is used.
+  const measureCanvas = document.createElement('canvas');
+  measureCanvas.width = CARD_WIDTH;
+  measureCanvas.height = 10;
+  const measureCtx = measureCanvas.getContext('2d');
+  const contentHeight = drawFn(measureCtx, { width: CARD_WIDTH, height: 10, drawBackground: false }, assets);
+
+  // Pass 2 — render for real at exactly the measured height.
+  const height = Math.ceil(contentHeight);
+  const canvas = document.createElement('canvas');
+  canvas.width = CARD_WIDTH * CARD_SCALE;
+  canvas.height = height * CARD_SCALE;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(CARD_SCALE, CARD_SCALE);
+  drawFn(ctx, { width: CARD_WIDTH, height, drawBackground: true }, assets);
+
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  if (!blob) throw new Error('Failed to render the ID card.');
+  return blob;
+}
+
+function downloadBlob(blob, fileName) {
+  const blobUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(blobUrl);
+}
+
 // @param user  The logged-in trainer's user object (AuthContext shape:
 //              name/email/avatar + trainerProfile from /auth/me or /auth/login).
 export async function downloadTrainerIdCard(user) {
@@ -152,13 +377,6 @@ export async function downloadTrainerIdCard(user) {
   if (!trainerProfile) {
     throw new Error('Trainer profile is not available yet.');
   }
-
-  const scale = 2;
-  const width = 540;
-  const height = 340;
-  const padding = 18;
-  const headerHeight = 72;
-  const footerHeight = 26;
 
   const [avatarImg, crestImg, qrDataUrl] = await Promise.all([
     loadImage(resolveFileUrl(user?.avatar)),
@@ -171,162 +389,24 @@ export async function downloadTrainerIdCard(user) {
   ]);
   const qrImg = await loadImage(qrDataUrl);
 
-  const canvas = document.createElement('canvas');
-  canvas.width = width * scale;
-  canvas.height = height * scale;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(scale, scale);
+  // One card per assigned course — a trainer assigned to more than one
+  // course downloads one separate, correctly-labeled card per course
+  // instead of a single card listing every course. A trainer with no
+  // assigned courses still gets exactly one fallback card (same as the
+  // previous single-card behavior), so `course` is `null` in that case.
+  const courses = trainerProfile.courses?.length ? trainerProfile.courses : [null];
 
-  // Card base + clip so every element below (including the header band)
-  // respects the rounded corners.
-  ctx.save();
-  roundedRectPath(ctx, 0, 0, width, height, 16);
-  ctx.fillStyle = '#ffffff';
-  ctx.fill();
-  ctx.clip();
-
-  // Header band
-  const gradient = ctx.createLinearGradient(0, 0, width, 0);
-  gradient.addColorStop(0, COLORS.headerFrom);
-  gradient.addColorStop(1, COLORS.headerTo);
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, width, headerHeight);
-
-  const crestSize = 44;
-  const crestX = padding;
-  const crestY = (headerHeight - crestSize) / 2;
-  if (crestImg) ctx.drawImage(crestImg, crestX, crestY, crestSize, crestSize);
-
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '700 18px Arial, sans-serif';
-  ctx.fillText('TITAN INSTITUTE', crestX + crestSize + 12, headerHeight / 2 - 3);
-  ctx.fillStyle = '#e2eef9';
-  ctx.font = '600 11px Arial, sans-serif';
-  ctx.fillText('TRAINER IDENTIFICATION CARD', crestX + crestSize + 12, headerHeight / 2 + 15);
-
-  // Photo
-  const photoR = 46;
-  const photoCX = padding + photoR;
-  const photoCY = headerHeight + padding + photoR;
-  drawAvatar(ctx, avatarImg, user?.name, photoCX, photoCY, photoR);
-
-  // Employee ID badge under the photo
-  ctx.font = '700 12px Arial, sans-serif';
-  const badgeText = trainerProfile.employeeId || '—';
-  const badgeTextWidth = ctx.measureText(badgeText).width;
-  const badgeW = badgeTextWidth + 20;
-  const badgeH = 22;
-  const badgeX = photoCX - badgeW / 2;
-  const badgeY = photoCY + photoR + 14;
-  roundedRectPath(ctx, badgeX, badgeY, badgeW, badgeH, badgeH / 2);
-  ctx.fillStyle = COLORS.badgeBg;
-  ctx.fill();
-  ctx.fillStyle = COLORS.badgeText;
-  ctx.textAlign = 'center';
-  ctx.fillText(badgeText, photoCX, badgeY + badgeH / 2 + 4);
-  ctx.textAlign = 'left';
-
-  // QR code (reserved on the right, right column text is capped to its
-  // left edge so no combination of name/course/campus length can ever
-  // overlap it).
-  const qrSize = 88;
-  const qrX = width - padding - qrSize;
-  const qrY = height - footerHeight - qrSize - 12;
-  if (qrImg) {
-    ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
-    ctx.strokeStyle = COLORS.border;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(qrX, qrY, qrSize, qrSize);
-    ctx.fillStyle = COLORS.faint;
-    ctx.font = '500 9px Arial, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('Scan to verify', qrX + qrSize / 2, qrY + qrSize + 12);
-    ctx.textAlign = 'left';
+  for (let i = 0; i < courses.length; i++) {
+    const course = courses[i];
+    const blob = await renderCardToBlob({ avatarImg, crestImg, qrImg, user, trainerProfile, course }, drawTrainerCard);
+    const suffix = course?.name ? `-${sanitizeFileName(course.name)}` : '';
+    const fileName = `TITAN-Trainer-ID-${sanitizeFileName(trainerProfile.employeeId || user?.name)}${suffix}.png`;
+    downloadBlob(blob, fileName);
+    // Stagger multi-file downloads slightly — firing several a[download]
+    // clicks in the same tick is what makes browsers start treating the
+    // later ones as blocked popups instead of separate downloads.
+    if (i < courses.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    }
   }
-
-  // Right column: name, role tag, and key details
-  const colX = photoCX + photoR + 24;
-  const colMaxWidth = qrX - colX - 14;
-  let cursorY = headerHeight + padding + 20;
-
-  ctx.fillStyle = COLORS.text;
-  ctx.font = '700 20px Arial, sans-serif';
-  cursorY = drawWrappedText(ctx, user?.name || 'Trainer', colX, cursorY, colMaxWidth, 22, 1);
-
-  cursorY += 6;
-  ctx.font = '700 10px Arial, sans-serif';
-  const tag = 'TRAINER';
-  const tagW = ctx.measureText(tag).width + 16;
-  roundedRectPath(ctx, colX, cursorY - 12, tagW, 18, 9);
-  ctx.fillStyle = COLORS.badgeBg;
-  ctx.fill();
-  ctx.fillStyle = COLORS.badgeText;
-  ctx.fillText(tag, colX + 8, cursorY + 1);
-  cursorY += 18;
-
-  ctx.strokeStyle = COLORS.border;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(colX, cursorY);
-  ctx.lineTo(colX + colMaxWidth, cursorY);
-  ctx.stroke();
-  cursorY += 18;
-
-  const detailRow = (label, value) => {
-    ctx.fillStyle = COLORS.faint;
-    ctx.font = '600 9px Arial, sans-serif';
-    ctx.fillText(label.toUpperCase(), colX, cursorY);
-    cursorY += 13;
-    ctx.fillStyle = COLORS.text;
-    ctx.font = '500 12px Arial, sans-serif';
-    cursorY = drawWrappedText(ctx, value, colX, cursorY, colMaxWidth, 15, 2);
-    cursorY += 10;
-  };
-
-  const courseNames = (trainerProfile.courses || []).map((c) => c.name).filter(Boolean);
-  detailRow('Assigned Course(s)', courseNames.length ? courseNames.join(', ') : 'Not assigned yet');
-
-  const campusNames = (trainerProfile.campuses || []).map((c) => c.name).filter(Boolean);
-  detailRow('Campus', campusNames.length ? campusNames.join(', ') : '—');
-
-  if (trainerProfile.qualification) {
-    detailRow('Qualification', trainerProfile.qualification);
-  }
-
-  // Footer
-  const footerY = height - footerHeight;
-  ctx.strokeStyle = COLORS.border;
-  ctx.beginPath();
-  ctx.moveTo(padding, footerY);
-  ctx.lineTo(width - padding, footerY);
-  ctx.stroke();
-  ctx.fillStyle = COLORS.faint;
-  ctx.font = '500 9px Arial, sans-serif';
-  ctx.fillText(
-    `Property of TITAN Institute • Issued ${new Date().toLocaleDateString()}`,
-    padding,
-    footerY + 16
-  );
-
-  ctx.restore();
-
-  // Outer border, drawn after restore() so it sits on top, unclipped.
-  roundedRectPath(ctx, 0.5, 0.5, width - 1, height - 1, 16);
-  ctx.strokeStyle = COLORS.border;
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
-  if (!blob) throw new Error('Failed to render the ID card.');
-
-  const blobUrl = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = blobUrl;
-  link.download = `TITAN-Trainer-ID-${sanitizeFileName(trainerProfile.employeeId || user?.name)}.png`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(blobUrl);
 }

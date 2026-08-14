@@ -43,6 +43,15 @@ const JOB_STATUSES = ['draft', 'open', 'closed'];
 // updateEnrollment already use.
 const APPLICATION_STATUSES = ['pending', 'under_review', 'shortlisted', 'approved', 'rejected'];
 
+// Public course-registration review lifecycle (Registration.status). A
+// Registration is a standalone pre-Student record — see models/
+// Registration.js's own header comment for why this exists as its own
+// collection rather than reusing Enrollment.status the way the app used to.
+// Deliberately just these three: unlike ENROLLMENT_STATUSES' long academic
+// lifecycle (passed/completed/dropout/...), a Registration's only job is
+// "should this person become a Student," nothing past that.
+const REGISTRATION_STATUSES = ['pending', 'approved', 'rejected'];
+
 const PERMISSION_MODULES = [
   'dashboard',
   'students',
@@ -67,6 +76,14 @@ const PERMISSION_MODULES = [
   // gates application review/status-change/CV download.
   'jobs',
   'applications',
+  // Public course-registration review queue — see Registration.js/
+  // registration.controller.js. Deliberately its own module, separate from
+  // 'students': a Registration is reviewed/approved/rejected BEFORE any
+  // Student exists, so gating it on 'students' would be gating it on a
+  // permission about a different collection. Same "give the new module its
+  // own key" convention 'applications' already established above (never
+  // reuse 'jobs' for application review either).
+  'registrations',
 ];
 
 const PERMISSION_ACTIONS = ['view', 'create', 'update', 'delete', 'export'];
@@ -78,6 +95,7 @@ module.exports = {
   JOB_TYPES,
   JOB_STATUSES,
   APPLICATION_STATUSES,
+  REGISTRATION_STATUSES,
   PERMISSION_MODULES,
   PERMISSION_ACTIONS,
 };

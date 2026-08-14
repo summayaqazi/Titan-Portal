@@ -120,10 +120,24 @@ export default function TakeQuiz() {
       .then((data) => {
         if (cancelled) return;
         setAttempt(data);
+        // Restores whatever was already autosaved (see the debounced save
+        // effect below) — a refresh, a resume on another device, or just
+        // reopening this attempt after navigating away all pick up right
+        // where the student left off instead of starting blank.
+        const restored = {};
+        (data.answers || []).forEach((a) => {
+          if (a.selectedOptions?.length) restored[a.question] = new Set(a.selectedOptions);
+        });
+        setAnswers(restored);
         setState('ready');
       })
       .catch((err) => {
         if (cancelled) return;
+        // The server's own exact wording ("Quiz has not started yet." /
+        // "Quiz has expired." / "You have used both attempts for this
+        // quiz." / enrollment-forbidden) is shown as-is — never replaced or
+        // hidden by a generic message, so the student always sees the real
+        // reason they were blocked.
         setError(getErrorMessage(err, 'Failed to start quiz'));
         setState('error');
       });
@@ -131,6 +145,43 @@ export default function TakeQuiz() {
       cancelled = true;
     };
   }, [quizId]);
+
+  // Periodic autosave — debounced so every single click doesn't fire a
+  // request, but frequent enough that a refreshed/resumed session (see
+  // above) never lags far behind what's actually been answered. Never
+  // touches grading/status — only submitQuizAttempt (on explicit Submit)
+  // does that.
+  //
+  // A 410 here means the server has already independently closed this
+  // attempt out (the quiz's own end date/time passed, or the attempt's own
+  // timer ran out — see closeExpiredAttempt) — not just a transient network
+  // hiccup. Locking the page immediately (reusing the existing 'error'
+  // state/UI, same as a failed Start) is what makes expiry take effect
+  // right away even while a student is mid-answer, rather than only being
+  // discovered whenever they next click Submit.
+  useEffect(() => {
+    if (state !== 'ready' || !attempt) return undefined;
+    const timeout = setTimeout(() => {
+      const payload = Object.entries(answers).map(([question, selectedOptions]) => ({
+        question,
+        selectedOptions: Array.from(selectedOptions),
+      }));
+      studentPortalApi.saveQuizProgress(attempt.attemptId, payload).catch((err) => {
+        if (err.response?.status === 410) {
+          setError(getErrorMessage(err, 'This quiz has expired.'));
+          setState('error');
+          return;
+        }
+        // Otherwise best-effort as before — a transient autosave failure
+        // never blocks the student from continuing to answer, or from
+        // submitting for real at the end (handleSubmit sends the full,
+        // current answer set regardless of whether the last autosave
+        // succeeded).
+      });
+    }, 1500);
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answers, state, attempt?.attemptId]);
 
   const handleSubmit = useCallback(
     async (auto = false) => {
@@ -147,7 +198,15 @@ export default function TakeQuiz() {
         setState('result');
       } catch (err) {
         submittedRef.current = false;
-        setError(getErrorMessage(err, auto ? 'Time expired, but the automatic submission failed. Please try submitting again.' : 'Failed to submit quiz'));
+        const message = getErrorMessage(err, auto ? 'Time expired, but the automatic submission failed. Please try submitting again.' : 'Failed to submit quiz');
+        setError(message);
+        // 410 = the deadline had already passed server-side (quiz endAt or
+        // the attempt's own timer, whichever came first) and this attempt
+        // was auto-closed from the last autosaved answers instead of this
+        // submission. No further answers/submissions are possible for it —
+        // lock the page (existing 'error' state/UI) rather than leave the
+        // now-dead quiz form up as if retrying could still work.
+        if (err.response?.status === 410) setState('error');
       } finally {
         setSubmitting(false);
         setConfirmOpen(false);

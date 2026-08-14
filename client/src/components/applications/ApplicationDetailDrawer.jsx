@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { CheckCircle2, Download, ExternalLink, FileText, Mail, Phone } from 'lucide-react';
-import { Drawer, Button, StatusBadge, ConfirmDialog } from '../common';
+import { Drawer, Button, StatusBadge, ConfirmDialog, Avatar } from '../common';
 import { downloadFile, prettyFileName } from '../../utils/downloadFile';
 import { getErrorMessage } from '../../utils/errors';
+import { resolveFileUrl } from '../../utils/fileUrl';
 import applicationsApi from '../../api/applicationsApi';
 
 const JOB_TYPE_LABELS = { full_time: 'Full Time', part_time: 'Part Time', contract: 'Contract' };
@@ -107,32 +108,39 @@ export default function ApplicationDetailDrawer({ open, onClose, application, on
           <span className="text-xs text-slate-400">Applied {formatDate(application.appliedDate)}</span>
         </div>
 
-        <div className="mb-5 rounded-md bg-slate-50 p-3">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Applicant</p>
-          <p className="text-sm font-medium text-slate-800">{applicant?.name || '—'}</p>
-          {applicant?.email && (
-            <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
-              <Mail size={12} /> {applicant.email}
-            </p>
-          )}
-          {applicant?.phone && (
-            <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
-              <Phone size={12} /> {applicant.phone}
-            </p>
-          )}
+        <div className="mb-5 flex items-start gap-3 rounded-md bg-slate-50 p-3">
+          {/* The applicant's own submitted photo (Application.photoPath) —
+              distinct from, and never, the job's own image. */}
+          <Avatar src={resolveFileUrl(application.photoPath)} name={applicant?.name} size={44} />
+          <div className="min-w-0">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Applicant</p>
+            <p className="text-sm font-medium text-slate-800">{applicant?.name || '—'}</p>
+            {applicant?.email && (
+              <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
+                <Mail size={12} /> {applicant.email}
+              </p>
+            )}
+            {applicant?.phone && (
+              <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
+                <Phone size={12} /> {applicant.phone}
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="mb-5">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Job</p>
           <p className="text-sm font-medium text-slate-800">{job?.title || 'Job no longer available'}</p>
           {job && (
-            <p className="mt-0.5 text-xs text-slate-500">
-              {JOB_TYPE_LABELS[job.jobType] || job.jobType} · <StatusBadge status={job.status} />
+            <p className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-slate-500">
+              {JOB_TYPE_LABELS[job.jobType] || job.jobType}
+              {job.city ? ` · ${job.city}` : ''} · <StatusBadge status={job.status} />
             </p>
           )}
         </div>
 
         <div className="space-y-4">
+          <Field label="Applied Via">{application.applicationMethod || '—'}</Field>
           <Field label="Qualification">{application.qualification || '—'}</Field>
           <Field label="Experience">{application.experience || '—'}</Field>
           <Field label="Subject Command">{application.subjectCommand || '—'}</Field>

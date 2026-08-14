@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Users,
   UserCheck,
@@ -10,6 +11,13 @@ import {
   ClipboardCheck,
   AlertCircle,
   Building,
+  Briefcase,
+  FileClock,
+  ClipboardList,
+  Hourglass,
+  DoorOpen,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
 import { PageContainer, Select } from '../../components/common';
 import StatCard from '../../components/dashboard/StatCard';
@@ -40,6 +48,49 @@ const STAT_CARD_DEFS = [
   { key: 'totalTrainers', label: 'Trainers', icon: UserCog, iconClass: 'bg-indigo-50 text-indigo-600' },
   { key: 'activeSlots', label: 'Active Slots', icon: Clock, iconClass: 'bg-cyan-50 text-cyan-600' },
   { key: 'registrationOpenBatches', label: 'Registration Open', icon: ClipboardCheck, iconClass: 'bg-orange-50 text-orange-600' },
+];
+
+// Campus Admin Dashboard only — appended to statCardDefs below, never to
+// STAT_CARD_DEFS itself, so Super Admin's own 8 cards (and the separate
+// Job Portal section it already has, with its own "Total Job
+// Applications"/"Open Job Vacancies" cards) are completely untouched. Not
+// Links like the Job Portal cards below — Campus Admin has no Applications
+// or unrestricted Jobs page to click through to (application review stays
+// Super-Admin-only; the Jobs page it does have is read-only, not a
+// management destination worth a shortcut), just the counts themselves,
+// scoped server-side to whichever campus is selected (dashboard.
+// controller.js's getStats Admin branch).
+const ADMIN_JOB_CARD_DEFS = [
+  { key: 'availableJobs', label: 'Available Jobs', icon: DoorOpen, iconClass: 'bg-emerald-50 text-emerald-600' },
+  { key: 'totalJobApplications', label: 'Job Applications', icon: Briefcase, iconClass: 'bg-blue-50 text-blue-600' },
+];
+
+// Super Admin Dashboard only — never rendered for Admin (see `!isAdmin`
+// guard below), so the Admin Portal's own Dashboard is byte-for-byte
+// unchanged. Each card is a real live MongoDB count from getStats' global
+// branch (dashboard.controller.js) and links straight into the management
+// page that actually owns that data — Applications/Jobs/Registrations, the
+// existing pages (Registrations.jsx as of the Registrations/Students split)
+// Super Admin uses to review and act on them. `to`'s query string is what
+// that page's own existing filter UI already understands (see
+// Applications.jsx/Registrations.jsx's own initial-filter-from-URL reads).
+const JOB_PORTAL_CARD_DEFS = [
+  // Job Portal — unchanged.
+  { key: 'totalJobApplications', label: 'Total Job Applications', icon: Briefcase, iconClass: 'bg-blue-50 text-blue-600', to: '/super-admin/applications' },
+  { key: 'pendingJobApplications', label: 'Pending Job Applications', icon: FileClock, iconClass: 'bg-amber-50 text-amber-600', to: '/super-admin/applications?status=pending' },
+  { key: 'openJobVacancies', label: 'Open Job Vacancies', icon: DoorOpen, iconClass: 'bg-emerald-50 text-emerald-600', to: '/super-admin/jobs?status=open' },
+  // Student Registrations — a Registration is a public course-registration
+  // submission reviewed BEFORE any Student exists (see server/src/models/
+  // Registration.js's header comment); it is never an Enrollment and never
+  // a Student, so these four cards link into the dedicated Registrations
+  // module (registrations.jsx / registration.controller.js), never
+  // '/super-admin/students'. Students.jsx stays exclusively about already-
+  // approved Student records — clicking any of these four must never land
+  // there.
+  { key: 'totalStudentRegistrations', label: 'Student Registrations', icon: ClipboardList, iconClass: 'bg-violet-50 text-violet-600', to: '/super-admin/registrations' },
+  { key: 'pendingAdmissions', label: 'Pending Registrations', icon: Hourglass, iconClass: 'bg-orange-50 text-orange-600', to: '/super-admin/registrations?status=pending' },
+  { key: 'approvedRegistrations', label: 'Approved Registrations', icon: CheckCircle2, iconClass: 'bg-teal-50 text-teal-600', to: '/super-admin/registrations?status=approved' },
+  { key: 'rejectedRegistrations', label: 'Rejected Registrations', icon: XCircle, iconClass: 'bg-red-50 text-red-600', to: '/super-admin/registrations?status=rejected' },
 ];
 
 export default function Dashboard() {
@@ -77,12 +128,26 @@ export default function Dashboard() {
 
   // Once the accessible-campus list loads, make sure the selection is
   // actually one of them — covers a stale value from a previous account/DB
-  // state and picks a default (first campus) the first time there's none.
+  // state. ROOT CAUSE FIX: the very first default (nothing stored yet, e.g.
+  // a Campus Admin's first-ever visit) used to fall back to
+  // accessibleCampuses[0] — alphabetically first, with no relation to who
+  // was actually logged in — so an Islamabad/Faisalabad/etc. Admin's very
+  // first Dashboard load silently showed a DIFFERENT campus's numbers
+  // (whichever campus sorts first) until they happened to notice and
+  // switch the dropdown themselves. Defaults to this admin's own assigned
+  // campus (`user.campus`, the real database assignment on their User
+  // document — see User.js/auth.controller.js's populate) instead, so
+  // every Campus Admin's Dashboard is correct for THEIR campus/city from
+  // the first load, with no manual selector interaction required. Falls
+  // back to the first accessible campus only when this admin has no
+  // campus assigned in the database at all.
   useEffect(() => {
     if (!isAdmin || campusesLoading) return;
     const valid = accessibleCampuses.some((c) => c._id === selectedCampusId);
     if (!valid) {
-      const fallback = accessibleCampuses[0]?._id;
+      const ownCampusId = user?.campus?._id;
+      const ownCampusIsAccessible = ownCampusId && accessibleCampuses.some((c) => c._id === ownCampusId);
+      const fallback = ownCampusIsAccessible ? ownCampusId : accessibleCampuses[0]?._id;
       setSelectedCampusId(fallback);
       if (fallback) localStorage.setItem(SELECTED_CAMPUS_KEY, fallback);
       else localStorage.removeItem(SELECTED_CAMPUS_KEY);
@@ -99,9 +164,11 @@ export default function Dashboard() {
 
   // Cities/Campuses are always 1 in a single-campus view, so they're not
   // meaningful stats on the Admin Dashboard — Super Admin's global view is
-  // unaffected and keeps all 8 cards.
+  // unaffected and keeps all 8 cards (this ternary's `else` branch is
+  // exactly what it was before). Available Jobs / Job Applications are
+  // appended only for Admin, right after the other 6.
   const statCardDefs = isAdmin
-    ? STAT_CARD_DEFS.filter((c) => c.key !== 'totalCities' && c.key !== 'totalCampuses')
+    ? [...STAT_CARD_DEFS.filter((c) => c.key !== 'totalCities' && c.key !== 'totalCampuses'), ...ADMIN_JOB_CARD_DEFS]
     : STAT_CARD_DEFS;
 
   const campusParam = isAdmin ? selectedCampusId : undefined;
@@ -202,6 +269,31 @@ export default function Dashboard() {
               labelClassName="text-slate-500 max-sm:whitespace-normal! max-sm:break-words max-sm:leading-snug"
             />
           ))}
+        </div>
+      )}
+
+      {/* Job Portal + Student Registrations — Super Admin only (see
+          JOB_PORTAL_CARD_DEFS above); the Admin/Campus Admin Dashboard
+          renders nothing past this point differently than it already did. */}
+      {!isAdmin && !statsError && (
+        <div className="mt-6">
+          <h2 className="mb-3 text-sm font-semibold text-slate-700">Job Portal &amp; Registrations</h2>
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+            {JOB_PORTAL_CARD_DEFS.map(({ key, label, icon, iconClass, to }) => (
+              <Link key={key} to={to} className="block rounded-xl transition-transform hover:-translate-y-0.5">
+                <StatCard
+                  label={label}
+                  icon={icon}
+                  value={statsLoading ? '—' : (stats?.[key] ?? 0)}
+                  valueClassName="text-[#2877B9]"
+                  iconClassName={iconClass}
+                  className="flex h-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 hover:border-primary-200 hover:shadow-md sm:gap-4 sm:p-5"
+                  iconWrapClassName="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg sm:h-11 sm:w-11"
+                  labelClassName="text-slate-500 max-sm:whitespace-normal! max-sm:break-words max-sm:leading-snug"
+                />
+              </Link>
+            ))}
+          </div>
         </div>
       )}
 

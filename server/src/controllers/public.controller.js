@@ -1,9 +1,11 @@
 const asyncHandler = require('express-async-handler');
+const bcrypt = require('bcryptjs');
 const Course = require('../models/Course');
 const Batch = require('../models/Batch');
 const Student = require('../models/Student');
 const User = require('../models/User');
 const Enrollment = require('../models/Enrollment');
+const Registration = require('../models/Registration');
 const { ROLES } = require('../utils/constants');
 
 // Public-facing (unauthenticated) endpoints for the "discover a course ->
@@ -38,6 +40,10 @@ const OPEN_BATCH_STATUSES = ['upcoming', 'ongoing'];
 const BATCH_PUBLIC_POPULATE = [
   { path: 'campus', select: 'name address city', populate: { path: 'city', select: 'name' } },
   { path: 'slot', select: 'label startTime endTime days' },
+  // Trainer name only — never email/cnic/hourlyRate/etc. A visitor deciding
+  // between batches reasonably wants to know who teaches it, same
+  // "relevant course data" every other batch field here already exposes.
+  { path: 'trainer', select: 'user qualification', populate: { path: 'user', select: 'name' } },
 ];
 
 const serializeBatch = (b) => ({
@@ -52,6 +58,7 @@ const serializeBatch = (b) => ({
   slot: b.slot
     ? { _id: b.slot._id, label: b.slot.label, startTime: b.slot.startTime, endTime: b.slot.endTime, days: b.slot.days }
     : null,
+  trainer: b.trainer?.user ? { name: b.trainer.user.name, qualification: b.trainer.qualification || undefined } : null,
 });
 
 // @desc    List courses currently open for public registration (isActive
@@ -133,12 +140,16 @@ const getPublicCourse = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Public registration + enrollment submission. Creates User +
-//          Student + Enrollment (or, for a person who already has a
-//          Student account, verifies their password and only adds a new
-//          Enrollment to that existing account) and leaves the resulting
-//          enrollment in 'pending' status for Admin/Super Admin to review
-//          through their existing workflows.
+// @desc    Public registration submission. For a brand-new visitor, this
+//          creates ONLY a Registration — no User/Student/Enrollment exists
+//          yet — left in 'pending' status for Super Admin/Admin to review
+//          through the separate Registrations module
+//          (registration.controller.js). A User+Student is created only if
+//          and when that Registration is approved. For a person who already
+//          has a Student account, this instead verifies their password and
+//          adds a new Enrollment to that existing account directly (no
+//          Registration involved — their identity is already vetted). See
+//          Registration.js's header comment for the full architecture.
 // @route   POST /api/public/register
 // @access  Public
 const registerAndEnroll = asyncHandler(async (req, res) => {
@@ -174,6 +185,18 @@ const registerAndEnroll = asyncHandler(async (req, res) => {
   if (!courseId || !batchId) {
     res.status(400);
     throw new Error('Please select a course and a batch');
+  }
+  // Mandatory for every course registration submission — validated before
+  // anything else below runs (account lookup, duplicate checks, ...), same
+  // "validate the upload before allowing submission" discipline as the Job
+  // Portal's own applicant photo (applicantPortal.controller.js's
+  // submitApplication). Completely separate from — never — a course/batch
+  // image; this is the registrant's own photo, stored on
+  // Registration.profilePicture below and carried over to
+  // Student.profilePicture verbatim once/if the registration is approved.
+  if (!req.file) {
+    res.status(400);
+    throw new Error('A profile photo is required to register');
   }
 
   if (!EMAIL_RE.test(email)) {
@@ -238,9 +261,16 @@ const registerAndEnroll = asyncHandler(async (req, res) => {
 
   const normalizedEmail = String(email).toLowerCase().trim();
 
-  // --- Duplicate protection. Never silently create a second account. ---
+  // --- Duplicate protection. Never silently create a second account, and
+  // never let the same identity queue up two pending Registrations under
+  // different emails either. ---
   const existingUser = await User.findOne({ email: normalizedEmail });
   const existingStudentByCnic = await Student.findOne({ cnic }).populate('user', 'email role');
+  // A Registration for this CNIC that's still awaiting review — same
+  // "don't let a second submission race the first" reasoning as the
+  // existingStudentByCnic check below, just extended to cover an identity
+  // that hasn't been promoted to a Student yet.
+  const existingRegistrationByCnic = await Registration.findOne({ cnic, status: 'pending' });
 
   if (
     existingStudentByCnic &&
@@ -251,22 +281,28 @@ const registerAndEnroll = asyncHandler(async (req, res) => {
       'A student with this CNIC is already registered under a different email. Please log in with your existing account, or contact the institute if you believe this is a mistake.'
     );
   }
+  if (existingRegistrationByCnic && existingRegistrationByCnic.email !== normalizedEmail) {
+    res.status(409);
+    throw new Error(
+      'A registration with this CNIC is already pending review under a different email. Please wait for that review, or contact the institute if you believe this is a mistake.'
+    );
+  }
 
-  let user;
-  let student;
-  let isNewAccount = false;
-
+  // An existing (already-approved) student applying to another course skips
+  // Registration entirely — their identity is already vetted, so this only
+  // ever creates a new Enrollment for their existing Student account, per
+  // the domain rule (never a second Student for the same person). A
+  // brand-new visitor, on the other hand, has no Student to attach an
+  // Enrollment to yet — see the `else` branch below, which creates a
+  // Registration for review instead of an Enrollment.
   if (existingUser) {
     if (existingUser.role !== ROLES.STUDENT) {
       res.status(409);
       throw new Error('This email is already associated with an account. Please use a different email address.');
     }
 
-    // An existing student applying to another course: use the existing
-    // Student account and only create a new Enrollment for it, per the
-    // domain rule (never a second Student for the same person). Password
-    // is required to prove this is genuinely their account before adding
-    // anything to it.
+    // Password is required to prove this is genuinely their account before
+    // adding anything to it.
     const authedUser = await User.findById(existingUser._id).select('+password');
     const passwordMatches = await authedUser.comparePassword(password);
     if (!passwordMatches) {
@@ -276,7 +312,7 @@ const registerAndEnroll = asyncHandler(async (req, res) => {
       );
     }
 
-    student = await Student.findOne({ user: existingUser._id });
+    const student = await Student.findOne({ user: existingUser._id });
     if (!student) {
       res.status(409);
       throw new Error('This email belongs to an existing account that is not a student account.');
@@ -286,38 +322,61 @@ const registerAndEnroll = asyncHandler(async (req, res) => {
       throw new Error('The CNIC provided does not match the CNIC already on file for this account.');
     }
 
-    user = existingUser;
-  } else {
-    isNewAccount = true;
-  }
-
-  // --- Duplicate enrollment protection (friendly pre-check; the schema's
-  // {student, course, batch} unique index is still the final guard under
-  // concurrent requests, translated into the same message by
-  // error.middleware.js). ---
-  if (student) {
     const existingEnrollment = await Enrollment.findOne({ student: student._id, course: course._id, batch: batch._id });
     if (existingEnrollment) {
       res.status(409);
       throw new Error('You are already enrolled (or have already applied) for this course batch.');
     }
-  }
 
-  if (isNewAccount) {
-    user = await User.create({
-      name: String(name).trim(),
-      email: normalizedEmail,
-      password,
-      role: ROLES.STUDENT,
-      phone,
+    // Trainer/campus/slot are always copied from the Batch the visitor
+    // picked — never accepted directly from the request body — so a public
+    // caller can never assign themselves a trainer or campus outside what
+    // the batch is actually configured for. Status always starts 'pending';
+    // nothing here can mark an admission pre-approved.
+    const enrollment = await Enrollment.create({
+      student: student._id,
+      course: course._id,
+      batch: batch._id,
+      campus: batch.campus,
+      trainer: batch.trainer,
+      slot: batch.slot,
+      status: 'pending',
+      history: [{ status: 'pending', note: 'Submitted via public registration', changedBy: existingUser._id }],
     });
 
-    let normalizedLaptopAvailability;
-    if (laptopAvailability === 'true' || laptopAvailability === true) normalizedLaptopAvailability = true;
-    else if (laptopAvailability === 'false' || laptopAvailability === false) normalizedLaptopAvailability = false;
+    res.status(201).json({
+      success: true,
+      data: {
+        isNewAccount: false,
+        studentId: student._id,
+        enrollmentId: enrollment._id,
+        status: enrollment.status,
+        course: { name: course.name, code: course.code },
+        batch: { batchCode: batch.batchCode },
+        applicant: { name: existingUser.name, email: existingUser.email },
+      },
+    });
+    return;
+  }
 
-    student = await Student.create({
-      user: user._id,
+  // --- Brand-new visitor: no User/Student/Enrollment is created here. This
+  // submission becomes a Registration — reviewed by Super Admin/Admin
+  // (registration.controller.js), which is the ONLY place a User+Student
+  // ever gets created from this flow (on approval). See Registration.js's
+  // header comment for the full reasoning. The password is hashed here
+  // (never stored plaintext) and reused as-is if/when a User is eventually
+  // created — see User.js's own pre-save hook. ---
+  let normalizedLaptopAvailability;
+  if (laptopAvailability === 'true' || laptopAvailability === true) normalizedLaptopAvailability = true;
+  else if (laptopAvailability === 'false' || laptopAvailability === false) normalizedLaptopAvailability = false;
+
+  let registration;
+  try {
+    registration = await Registration.create({
+      name: String(name).trim(),
+      email: normalizedEmail,
+      passwordHash: await bcrypt.hash(String(password), 10),
+      phone,
       fatherName,
       cnic,
       fatherCnic: fatherCnic || undefined,
@@ -329,35 +388,28 @@ const registerAndEnroll = asyncHandler(async (req, res) => {
       computerProficiency: computerProficiency || undefined,
       laptopAvailability: normalizedLaptopAvailability,
       profilePicture: req.file ? `/uploads/${req.file.filename}` : undefined,
+      course: course._id,
+      batch: batch._id,
+      status: 'pending',
+      history: [{ status: 'pending', note: 'Submitted via public registration' }],
     });
+  } catch (err) {
+    if (err.code === 11000) {
+      res.status(409);
+      throw new Error('You have already submitted a registration for this course batch with this email.');
+    }
+    throw err;
   }
-
-  // Trainer/campus/slot are always copied from the Batch the visitor picked
-  // — never accepted directly from the request body — so a public caller
-  // can never assign themselves a trainer or campus outside what the batch
-  // is actually configured for. Status always starts 'pending'; nothing
-  // here can mark an application pre-approved.
-  const enrollment = await Enrollment.create({
-    student: student._id,
-    course: course._id,
-    batch: batch._id,
-    campus: batch.campus,
-    trainer: batch.trainer,
-    slot: batch.slot,
-    status: 'pending',
-    history: [{ status: 'pending', note: 'Submitted via public registration', changedBy: user._id }],
-  });
 
   res.status(201).json({
     success: true,
     data: {
-      isNewAccount,
-      studentId: student._id,
-      enrollmentId: enrollment._id,
-      status: enrollment.status,
+      isNewAccount: true,
+      registrationId: registration._id,
+      status: registration.status,
       course: { name: course.name, code: course.code },
       batch: { batchCode: batch.batchCode },
-      applicant: { name: user.name, email: user.email },
+      applicant: { name: registration.name, email: registration.email },
     },
   });
 });

@@ -9,7 +9,7 @@ const {
 const { protect, authorize, checkPermission } = require('../middleware/auth.middleware');
 const { ROLES } = require('../utils/constants');
 const { attachOwnApplicant } = require('../middleware/applicantScope.middleware');
-const { uploadResume } = require('../middleware/upload.middleware');
+const { uploadApplicationFiles } = require('../middleware/upload.middleware');
 
 // Every route here is the logged-in Applicant's own action only — scoped
 // server-side via attachOwnApplicant (never from a client-supplied id),
@@ -25,7 +25,18 @@ router.get('/me/applications', checkPermission('applications', 'view'), getMyApp
 router.get('/me/applications/:id', checkPermission('applications', 'view'), getMyApplication);
 router.get('/me/applications/:id/resume', checkPermission('applications', 'view'), downloadMyResume);
 
-// Phase 3 — unchanged.
-router.post('/me/applications', checkPermission('applications', 'create'), uploadResume.single('resume'), submitApplication);
+// The applicant's own photo is now mandatory alongside the (still
+// optional-unless-the-job-requires-it) resume — both accepted in one
+// multipart request via uploadApplicationFiles (see upload.middleware.js),
+// which routes each field to its own storage/type rules.
+router.post(
+  '/me/applications',
+  checkPermission('applications', 'create'),
+  uploadApplicationFiles.fields([
+    { name: 'photo', maxCount: 1 },
+    { name: 'resume', maxCount: 1 },
+  ]),
+  submitApplication
+);
 
 module.exports = router;

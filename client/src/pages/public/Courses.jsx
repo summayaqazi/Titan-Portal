@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BookOpen, Clock, MapPin } from 'lucide-react';
 import PublicHeader from '../../components/public/PublicHeader';
-import { EmptyState } from '../../components/common';
+import PublicHero from '../../components/public/PublicHero';
+import PublicFooter from '../../components/public/PublicFooter';
+import { EmptyState, StatusBadge } from '../../components/common';
 import publicApi from '../../api/publicApi';
 
 // Public, unauthenticated Courses page — the entry point of the
@@ -24,15 +26,13 @@ export default function Courses() {
   return (
     <div className="min-h-screen bg-(--color-app-bg)">
       <PublicHeader />
+      <PublicHero
+        eyebrow="TITAN Institute"
+        title="Courses open for enrollment"
+        description="Browse the courses currently accepting applications and apply online in a few minutes."
+      />
 
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
-        <div className="mb-6 sm:mb-8">
-          <h1 className="text-xl font-semibold text-slate-800 sm:text-2xl">Courses open for enrollment</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Browse the courses currently accepting applications and apply online in a few minutes.
-          </p>
-        </div>
-
         {error && <p className="mb-6 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
 
         {courses === null && !error && (
@@ -59,13 +59,11 @@ export default function Courses() {
               <Link
                 key={course._id}
                 to={`/courses/${course._id}`}
-                className="flex flex-col rounded-lg border border-slate-200 bg-white p-5 transition-shadow hover:shadow-md"
+                className="flex flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary-200 hover:shadow-lg"
               >
                 <div className="mb-2 flex items-start justify-between gap-2">
                   <h2 className="font-semibold text-slate-800">{course.name}</h2>
-                  <span className="inline-flex shrink-0 items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">
-                    Open
-                  </span>
+                  <StatusBadge status="open" />
                 </div>
                 {course.description && (
                   <p className="mb-4 line-clamp-3 flex-1 text-sm text-slate-500">{course.description}</p>
@@ -87,6 +85,7 @@ export default function Courses() {
           </div>
         )}
       </main>
+      <PublicFooter />
     </div>
   );
 }

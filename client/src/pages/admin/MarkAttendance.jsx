@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { PageContainer } from '../../components/common';
 import RollNumberLookup from '../../components/attendance/RollNumberLookup';
 import MarkAttendancePanel from '../../components/attendance/MarkAttendancePanel';
@@ -13,6 +14,7 @@ export default function MarkAttendance() {
   const { can } = useAuth();
   const canMark = can('attendance', 'create');
   const campusFilter = useAdminCampusFilter();
+  const navigate = useNavigate();
   const [batches, setBatches] = useState([]);
 
   useEffect(() => {
@@ -21,7 +23,7 @@ export default function MarkAttendance() {
   }, []);
 
   return (
-    <PageContainer title="Mark Attendance" description="Look up a student and mark batch attendance">
+    <PageContainer title="Mark Attendance" description="Look up a student and mark batch attendance" onBack={() => navigate(-1)}>
       <RollNumberLookup campusFilter={campusFilter} />
       <MarkAttendancePanel batches={batches} canMark={canMark} />
     </PageContainer>

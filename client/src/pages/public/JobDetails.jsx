@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Briefcase, CalendarDays, ExternalLink, GraduationCap, Info, Languages, Wallet } from 'lucide-react';
+import { ArrowLeft, Briefcase, CalendarDays, ExternalLink, GraduationCap, Info, Languages, MapPin, Wallet } from 'lucide-react';
 import PublicHeader from '../../components/public/PublicHeader';
+import PublicFooter from '../../components/public/PublicFooter';
 import { Button, StatusBadge } from '../../components/common';
+import { resolveFileUrl } from '../../utils/fileUrl';
 import publicJobsApi from '../../api/publicJobsApi';
 
 const JOB_TYPE_LABELS = {
@@ -84,13 +86,29 @@ export default function JobDetails() {
         {!error && !job && <div className="h-64 animate-pulse rounded-lg border border-slate-200 bg-white" />}
 
         {job && (
-          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+            {/* Older jobs published before this field existed may have no
+                image yet — never a placeholder/stock photo, just fall back
+                to the same thin navy brand accent Course Details also uses. */}
+            {job.image ? (
+              <img src={resolveFileUrl(job.image)} alt="" className="h-56 w-full object-cover sm:h-72" />
+            ) : (
+              <div className="h-1.5 bg-(--color-sidebar)" />
+            )}
             <div className="border-b border-slate-200 p-6 sm:p-8">
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <StatusBadge status={stateCopy.badge} />
                 <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
                   <Briefcase size={12} /> {JOB_TYPE_LABELS[job.jobType] || job.jobType}
                 </span>
+                {/* City/location — its own badge right next to job type, so
+                    it's visible immediately alongside the title, not buried
+                    lower in the details grid. */}
+                {job.city && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700">
+                    <MapPin size={12} /> {job.city}
+                  </span>
+                )}
               </div>
               <h1 className="text-xl font-semibold text-slate-800 sm:text-2xl">{job.title}</h1>
               {job.about && <p className="mt-3 text-sm leading-relaxed text-slate-600">{job.about}</p>}
@@ -193,6 +211,7 @@ export default function JobDetails() {
           </div>
         )}
       </main>
+      <PublicFooter />
     </div>
   );
 }

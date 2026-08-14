@@ -47,3 +47,29 @@ body {
 #root {
   min-height: 100vh;
 }
+
+/* Global cursor-pointer fix (every portal — Super Admin, Admin, Trainer,
+   Student share this one stylesheet). Native browsers (and Tailwind's own
+   reset) leave <button> with the plain arrow cursor instead of a pointer —
+   only <a href> gets pointer for free — so without this every button,
+   tab, dropdown trigger, row action icon, and menu item in the app shows
+   the wrong cursor on hover. One rule set here instead of hand-adding a
+   `cursor-pointer` class to hundreds of individual elements (a few already
+   had it, ad hoc — this makes it universal and keeps future ones covered
+   automatically). Scoped to elements that are actually clickable/focusable
+   controls, so it can never land on plain layout `<div>`s/text; disabled
+   buttons are explicitly excluded so `disabled:cursor-not-allowed`
+   (already used throughout) keeps working exactly as before. Cursor only —
+   no color/spacing/layout/size property is touched. */
+button:not(:disabled),
+[role='button']:not([aria-disabled='true']),
+a[href],
+select,
+summary,
+label,
+input[type='checkbox'],
+input[type='radio'],
+input[type='submit'],
+input[type='button'] {
+  cursor: pointer;
+}

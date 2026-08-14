@@ -21,6 +21,17 @@ const applicationSchema = new mongoose.Schema(
   {
     applicant: { type: mongoose.Schema.Types.ObjectId, ref: 'Applicant', required: true },
     job: { type: mongoose.Schema.Types.ObjectId, ref: 'Job', required: true },
+    // Server-relative path (e.g. "/uploads/xyz.png") to the applicant's own
+    // photo, submitted together with the rest of the application form —
+    // same public `upload` multer instance + storage directory as
+    // User.avatar/Student.profilePicture (server/src/middleware/upload.
+    // middleware.js), never the private resume storage. Mandatory for
+    // every application (enforced in applicantPortal.controller.js's
+    // submitApplication, not here — same "business rule in the
+    // controller" discipline this app already uses for resumePath's own
+    // conditional requirement below) — completely distinct from Job.image
+    // (the job posting's own banner) and never reused as one.
+    photoPath: { type: String },
     // Submitted at application time — specific to this application, not a
     // standing Applicant profile field (see Applicant.js's own comment).
     qualification: { type: String, trim: true },
@@ -33,6 +44,14 @@ const applicationSchema = new mongoose.Schema(
     // download endpoint (added in a later phase).
     resumePath: { type: String },
     links: [{ type: String, trim: true }],
+    // How this application was submitted. Server-set only (see
+    // submitApplication in applicantPortal.controller.js) — never read from
+    // the client, same as status/history below. Currently always 'Online
+    // Application' since the public Job Portal is the only submission
+    // channel that exists; kept as its own field (not hardcoded into every
+    // display site) so a future channel (e.g. referral, walk-in) can be
+    // recorded without a schema change.
+    applicationMethod: { type: String, trim: true, default: 'Online Application' },
     status: { type: String, enum: APPLICATION_STATUSES, default: 'pending' },
     appliedDate: { type: Date, default: Date.now },
     history: [applicationHistorySchema],

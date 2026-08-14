@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Eye, EyeOff, FileText, X } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Eye, EyeOff, FileText, MapPin, X } from 'lucide-react';
 import PublicHeader from '../../components/public/PublicHeader';
-import { Button, FormField, Input, Textarea } from '../../components/common';
+import PublicFooter from '../../components/public/PublicFooter';
+import { Button, FormField, ImageUpload, Input, StatusBadge, Textarea } from '../../components/common';
 import { useAuth } from '../../context/AuthContext';
 import { ROLES } from '../../constants/roles';
 import { validateResumeFile } from '../../utils/validateFile';
 import publicJobsApi from '../../api/publicJobsApi';
 import applicantApi from '../../api/applicantApi';
+import applicantPortalApi from '../../api/applicantPortalApi';
 
 const ROLE_LABELS = {
   SUPER_ADMIN: 'Super Admin',
@@ -133,6 +135,12 @@ export default function JobApply() {
   });
   const [resumeFile, setResumeFile] = useState(null);
   const [resumeError, setResumeError] = useState('');
+  // Applicant's own photo — mandatory for every application (distinct from
+  // the resume above, which stays conditional on job.resumeRequired, and
+  // completely separate from the job's own image, which this page never
+  // touches).
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoError, setPhotoError] = useState('');
   const [formErrors, setFormErrors] = useState({});
   const [serverError, setServerError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -164,9 +172,13 @@ export default function JobApply() {
     const errors = {};
     if (!form.qualification.trim()) errors.qualification = 'Qualification is required';
     if (!form.experience.trim()) errors.experience = 'Experience is required';
+    // Shown through ImageUpload's own error slot (photoError), not
+    // formErrors — same as its file-type/size errors, so there's exactly
+    // one message in one place instead of two for the same field.
+    if (!photoFile) setPhotoError('A profile photo is required to apply');
     if (job?.resumeRequired && !resumeFile) errors.resume = 'A resume/CV is required for this job';
     setFormErrors(errors);
-    return Object.keys(errors).length === 0;
+    return Object.keys(errors).length === 0 && Boolean(photoFile);
   };
 
   const handleSubmit = async (e) => {
@@ -185,6 +197,7 @@ export default function JobApply() {
         subjectCommand: form.subjectCommand,
         languages: form.languages,
         links: form.links,
+        photo: photoFile || undefined,
         resume: resumeFile || undefined,
       });
       navigate('/apply/success', { state: { result } });
@@ -197,6 +210,36 @@ export default function JobApply() {
 
   const isApplicant = user?.role === ROLES.APPLICANT;
   const isWrongRole = Boolean(user) && !isApplicant;
+
+  // Has this Applicant already applied to THIS job? Checked against the
+  // real Application collection (GET /api/applicant/me/applications?job=…,
+  // the same authenticated/RBAC-gated endpoint the Applicant Portal itself
+  // uses — no second data source) every time we know who's logged in and
+  // which job this is, so a returning Applicant is routed to their actual
+  // application status instead of the blank form again (and can never
+  // trigger the server's duplicate-application 409 by mistake). `undefined`
+  // = still checking, `null` = confirmed none exists yet.
+  const [existingApplication, setExistingApplication] = useState(undefined);
+
+  useEffect(() => {
+    if (!isApplicant || !jobId) {
+      setExistingApplication(isApplicant ? undefined : null);
+      return;
+    }
+    let cancelled = false;
+    setExistingApplication(undefined);
+    applicantPortalApi
+      .listApplications({ job: jobId, limit: 1 })
+      .then((res) => {
+        if (!cancelled) setExistingApplication(res.data?.[0] || null);
+      })
+      .catch(() => {
+        if (!cancelled) setExistingApplication(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isApplicant, jobId, user?.id]);
 
   return (
     <div className="min-h-screen bg-(--color-app-bg)">
@@ -229,8 +272,21 @@ export default function JobApply() {
         )}
 
         {job && job.applicationState === 'open' && (
-          <div className="rounded-lg border border-slate-200 bg-white p-6 sm:p-8">
+          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+            {/* Same thin navy brand accent as Course Details / Job Details. */}
+            <div className="h-1.5 bg-(--color-sidebar)" />
+            <div className="p-6 sm:p-8">
             <h1 className="mb-1 text-xl font-semibold text-slate-800">Apply for {job.title}</h1>
+            {/* Explicit "which city am I applying for" confirmation, shown
+                before the applicant reaches the form below — the whole
+                point being it's seen before they submit, not just on the
+                Job Details page they may have arrived here from a while
+                ago (a shared/bookmarked link goes straight here). */}
+            {job.city && (
+              <p className="mb-4 flex items-center gap-1.5 text-sm font-medium text-primary-700">
+                <MapPin size={15} className="shrink-0" /> This position is based in {job.city}
+              </p>
+            )}
 
             {isWrongRole && (
               <div className="mt-6 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
@@ -339,7 +395,48 @@ export default function JobApply() {
               </div>
             )}
 
-            {!isWrongRole && isApplicant && (
+            {!isWrongRole && isApplicant && existingApplication === undefined && (
+              <div className="mt-6 h-32 animate-pulse rounded-md bg-slate-50" />
+            )}
+
+            {/* Already applied to this exact job — show the real status
+                pulled from MongoDB and a way into the full Applicant
+                Portal, instead of the application form again. Fixes the
+                actual data-fetching/routing gap (not just hiding the
+                submit button): the form below is never even reached for a
+                job this Applicant already has an Application record for. */}
+            {!isWrongRole && isApplicant && existingApplication && (
+              <div className="mt-6 rounded-md border border-green-200 bg-green-50 p-4">
+                <div className="flex items-start gap-3">
+                  <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-green-600" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-green-800">You've already applied for this position</p>
+                    <p className="mt-1 text-sm text-green-700">
+                      Applied on{' '}
+                      {new Date(existingApplication.appliedDate).toLocaleDateString(undefined, {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                      })}{' '}
+                      — current status:
+                    </p>
+                    <div className="mt-2">
+                      <StatusBadge status={existingApplication.status} />
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Link to={`/applicant/applications/${existingApplication._id}`}>
+                    <Button variant="secondary">View Application Status</Button>
+                  </Link>
+                  <Link to="/applicant/dashboard">
+                    <Button variant="secondary">Go to My Applications</Button>
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {!isWrongRole && isApplicant && existingApplication === null && (
               <form onSubmit={handleSubmit} className="mt-6" noValidate>
                 <div className="mb-4 grid grid-cols-1 gap-x-4 rounded-md bg-slate-50 p-3 text-sm sm:grid-cols-2">
                   <p>
@@ -351,6 +448,17 @@ export default function JobApply() {
                     <span className="text-slate-700">{user.email}</span>
                   </p>
                 </div>
+
+                <FormField label="Profile Photo" htmlFor="photo" required>
+                  <ImageUpload
+                    onChange={(file) => {
+                      setPhotoFile(file);
+                      setPhotoError('');
+                    }}
+                    error={photoError}
+                    setError={setPhotoError}
+                  />
+                </FormField>
 
                 <FormField label="Phone" htmlFor="phone">
                   <Input id="phone" value={form.phone} onChange={handleChange('phone')} placeholder="03xx-xxxxxxx" />
@@ -416,9 +524,11 @@ export default function JobApply() {
                 </Button>
               </form>
             )}
+            </div>
           </div>
         )}
       </main>
+      <PublicFooter />
     </div>
   );
 }

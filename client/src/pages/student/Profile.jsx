@@ -13,6 +13,7 @@ import {
   UserRound,
   BookOpen,
   LogOut,
+  Download,
 } from 'lucide-react';
 import { PageContainer, Avatar, StatusBadge, Button, Drawer, FormField, Input, Select, Textarea, ImageUpload } from '../../components/common';
 import studentPortalApi from '../../api/studentPortalApi';
@@ -20,6 +21,7 @@ import { updateProfileRequest } from '../../api/profileApi';
 import { useAuth } from '../../context/AuthContext';
 import { getErrorMessage } from '../../utils/errors';
 import { resolveFileUrl } from '../../utils/fileUrl';
+import { downloadStudentIdCard } from '../../utils/studentIdCard';
 import useSubmitGuard from '../../hooks/useSubmitGuard';
 
 const GENDER_OPTIONS = [
@@ -246,10 +248,28 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [editOpen, setEditOpen] = useState(false);
+  const [downloadingCard, setDownloadingCard] = useState(false);
+  const [cardError, setCardError] = useState('');
 
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+
+  // Same try/download/finally shape as the Trainer Portal's own "Download
+  // Profile ID" handler (pages/trainer/Profile.jsx) — reuses whatever's
+  // already loaded in `profile` rather than a second fetch, since this page
+  // already keeps it fresh via the effect below.
+  const handleDownloadIdCard = async () => {
+    setCardError('');
+    setDownloadingCard(true);
+    try {
+      await downloadStudentIdCard(profile);
+    } catch (err) {
+      setCardError(err.message || 'Failed to generate the ID card');
+    } finally {
+      setDownloadingCard(false);
+    }
   };
 
   useEffect(() => {
@@ -307,9 +327,17 @@ export default function Profile() {
                   <p className="mt-1.5 truncate text-sm text-slate-500">{profile.email}</p>
                 </div>
               </div>
-              <Button onClick={() => setEditOpen(true)} className="shrink-0">
-                <Pencil size={15} /> Edit Profile
-              </Button>
+              <div className="flex flex-col items-start gap-1.5 sm:items-end">
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="secondary" onClick={handleDownloadIdCard} disabled={downloadingCard} className="shrink-0">
+                    <Download size={15} /> {downloadingCard ? 'Generating…' : 'Download ID Card'}
+                  </Button>
+                  <Button onClick={() => setEditOpen(true)} className="shrink-0">
+                    <Pencil size={15} /> Edit Profile
+                  </Button>
+                </div>
+                {cardError && <p className="text-xs text-red-600">{cardError}</p>}
+              </div>
             </div>
           </div>
 

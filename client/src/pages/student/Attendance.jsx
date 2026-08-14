@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { CalendarCheck, CheckCircle2, XCircle, Clock3 } from 'lucide-react';
-import { PageContainer, StatusBadge, Table, Select } from '../../components/common';
+import { CalendarCheck, CheckCircle2, XCircle, Clock3, QrCode } from 'lucide-react';
+import { PageContainer, StatusBadge, Table, Select, Button } from '../../components/common';
 import StatCard from '../../components/dashboard/StatCard';
+import QrAttendanceScanner from '../../components/student/QrAttendanceScanner';
 import studentPortalApi from '../../api/studentPortalApi';
 import { getErrorMessage } from '../../utils/errors';
 
@@ -36,6 +37,7 @@ export default function Attendance() {
   const [month, setMonth] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,6 +59,15 @@ export default function Attendance() {
     };
   }, [month]);
 
+  // Re-fetch so today's newly-marked record (and the stat cards above it)
+  // reflect immediately after a successful scan, without a manual refresh.
+  const handleScanSuccess = () => {
+    studentPortalApi
+      .getAttendance(month)
+      .then(setData)
+      .catch(() => {});
+  };
+
   const stats = data?.stats || { total: 0, present: 0, leave: 0, absent: 0, late: 0, percentPresent: 0 };
   const details = data?.details || [];
   const message = overviewMessage(stats.percentPresent);
@@ -66,13 +77,18 @@ export default function Attendance() {
       title="Attendance"
       description="Your attendance record across all enrolled courses"
       actions={
-        <Select value={month} onChange={(e) => setMonth(e.target.value)} className="w-auto">
-          {MONTH_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </Select>
+        <>
+          <Button variant="secondary" onClick={() => setScannerOpen(true)}>
+            <QrCode size={15} /> Scan QR
+          </Button>
+          <Select value={month} onChange={(e) => setMonth(e.target.value)} className="w-auto">
+            {MONTH_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </Select>
+        </>
       }
     >
       {error ? (
@@ -130,6 +146,8 @@ export default function Attendance() {
           </div>
         </>
       )}
+
+      <QrAttendanceScanner open={scannerOpen} onClose={() => setScannerOpen(false)} onSuccess={handleScanSuccess} />
     </PageContainer>
   );
 }

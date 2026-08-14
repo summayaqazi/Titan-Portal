@@ -24,6 +24,15 @@ import {
 export const SUPER_ADMIN_NAV = [
   { label: 'Dashboard', path: '/super-admin/dashboard', icon: LayoutDashboard, module: 'dashboard' },
   { label: 'Students', path: '/super-admin/students', icon: Users, module: 'students' },
+  // No "Student Registrations" sidebar entry, deliberately — Registrations
+  // is a real module (own route/page/API, gated by its own 'registrations'
+  // permission — see registration.controller.js/Registration.js) but its
+  // entry point is the Dashboard's own "Student Registrations/Pending/
+  // Approved/Rejected" card family (Dashboard.jsx's JOB_PORTAL_CARD_DEFS),
+  // never the sidebar. The route (`/super-admin/registrations`, still
+  // registered in App.jsx) and RoleRoute's permission gate on it are both
+  // untouched — only this menu entry is gone, so the page is reached
+  // exactly one way: Dashboard card -> Registration API -> data.
   {
     label: 'Academic Management',
     icon: BookOpen,
@@ -64,6 +73,10 @@ export const SUPER_ADMIN_NAV = [
 export const ADMIN_NAV = [
   { label: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard, module: 'dashboard' },
   { label: 'Students', path: '/admin/students', icon: Users, module: 'students' },
+  // Same 'registrations' module as Super Admin — invisible here (Sidebar's
+  // own can(module,'view') filter) until an Admin's role is explicitly
+  // granted it on the Roles & Permissions page; unset (false) by default.
+  { label: 'Student Registrations', path: '/admin/registrations', icon: ClipboardList, module: 'registrations' },
   {
     label: 'Attendance',
     icon: CalendarCheck,

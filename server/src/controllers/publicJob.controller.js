@@ -32,6 +32,8 @@ const serializeJobSummary = (job) => ({
   _id: job._id,
   title: job.title,
   jobType: job.jobType,
+  city: job.city,
+  image: job.image,
   experience: job.experience,
   qualification: job.qualification,
   expectedSalary: job.expectedSalary,
