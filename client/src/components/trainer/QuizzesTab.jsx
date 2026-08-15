@@ -7,7 +7,17 @@ import trainerQuizzesApi from '../../api/trainerQuizzesApi';
 import { getErrorMessage } from '../../utils/errors';
 import QuestionsManager from './QuestionsManager';
 
-const emptyForm = { title: '', description: '', durationMinutes: 30 };
+const emptyForm = { title: '', description: '', durationMinutes: 30, startAt: '', endAt: '' };
+
+// Same "YYYY-MM-DDTHH:mm in the browser's local time" conversion
+// AssignmentsTab.jsx already uses for its own due-date field — duplicated
+// locally rather than shared across files, matching that same precedent.
+function toDatetimeLocalValue(isoString) {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 function QuizFormDrawer({ open, onClose, quiz, onSubmit }) {
   const [form, setForm] = useState(emptyForm);
@@ -20,7 +30,13 @@ function QuizFormDrawer({ open, onClose, quiz, onSubmit }) {
     if (!open) return;
     setForm(
       quiz
-        ? { title: quiz.title, description: quiz.description || '', durationMinutes: quiz.durationMinutes || 30 }
+        ? {
+            title: quiz.title,
+            description: quiz.description || '',
+            durationMinutes: quiz.durationMinutes || 30,
+            startAt: toDatetimeLocalValue(quiz.startAt),
+            endAt: toDatetimeLocalValue(quiz.endAt),
+          }
         : emptyForm
     );
     setError('');
@@ -34,9 +50,17 @@ function QuizFormDrawer({ open, onClose, quiz, onSubmit }) {
         setError('Title is required');
         return;
       }
+      if (form.startAt && form.endAt && new Date(form.endAt) <= new Date(form.startAt)) {
+        setError('Quiz end date/time must be after the start date/time');
+        return;
+      }
       setSubmitting(true);
       try {
-        await onSubmit(form);
+        await onSubmit({
+          ...form,
+          startAt: form.startAt ? new Date(form.startAt).toISOString() : null,
+          endAt: form.endAt ? new Date(form.endAt).toISOString() : null,
+        });
         onClose();
       } catch (err) {
         setError(getErrorMessage(err, 'Failed to save quiz'));
@@ -86,6 +110,35 @@ function QuizFormDrawer({ open, onClose, quiz, onSubmit }) {
             onChange={(e) => setForm((p) => ({ ...p, durationMinutes: Number(e.target.value) }))}
           />
         </FormField>
+
+        {/* Availability window — a student can neither start, continue, nor
+            submit outside [startAt, endAt] (enforced server-side; see
+            studentPortal.controller.js#startQuizAttempt). Both optional —
+            leaving them blank keeps a quiz available indefinitely once
+            published, same as before this field existed. Stacks to one
+            column on narrow screens instead of cramming two datetime-local
+            inputs side by side. */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <FormField label="Quiz Starts At" htmlFor="quiz-start-at">
+            <Input
+              id="quiz-start-at"
+              type="datetime-local"
+              value={form.startAt}
+              onChange={(e) => setForm((p) => ({ ...p, startAt: e.target.value }))}
+            />
+          </FormField>
+          <FormField label="Quiz Ends At" htmlFor="quiz-end-at">
+            <Input
+              id="quiz-end-at"
+              type="datetime-local"
+              value={form.endAt}
+              onChange={(e) => setForm((p) => ({ ...p, endAt: e.target.value }))}
+            />
+          </FormField>
+        </div>
+        <p className="-mt-2 mb-3 text-xs text-slate-400">
+          Leave blank for no time restriction. Students cannot attempt the quiz before the start or after the end.
+        </p>
 
         {error && <p className="mb-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
       </form>

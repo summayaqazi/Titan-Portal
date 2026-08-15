@@ -4,8 +4,18 @@ const Batch = require('../models/Batch');
 const Trainer = require('../models/Trainer');
 const { parseListQuery, paginatedResponse } = require('../utils/queryHelpers');
 const { scopeBatchFilterToCampus, requireAdminCampusScope } = require('../utils/campusScope');
-
-const GRACE_MINUTES = 10;
+const { ROLES } = require('../utils/constants');
+// Window/lateness logic lives in trainerCheckInWindow.js — shared with the
+// Trainer Portal's own self-check-in (trainerSelfAttendance.controller.js)
+// so both compute "is this check-in on time" identically. Pure extraction,
+// no behavior change here.
+const { getCheckInWindow, getLateness } = require('../utils/trainerCheckInWindow');
+// Same QR parsing + schedule-resolution + check-in logic the Trainer
+// Portal's own self-check-in uses under the hood — see
+// utils/trainerQrAttendance.js's own header comment. scanTrainerAttendance
+// below is the only other caller; it exists so Admin/Super Admin can scan
+// a trainer's ID card instead of the trainer checking in themselves.
+const { parseTrainerQrPayload, checkInTrainerFromActiveSession } = require('../utils/trainerQrAttendance');
 
 const POPULATE = [
   { path: 'trainer', populate: { path: 'user', select: 'name email avatar' } },
@@ -13,17 +23,6 @@ const POPULATE = [
   { path: 'markedBy', select: 'name' },
   { path: 'verifiedBy', select: 'name' },
 ];
-
-// Combines the attendance `date` with a slot's "HH:MM" startTime into a
-// concrete Date, so a check-in can be compared against when the session was
-// actually supposed to start.
-const combineDateAndTime = (date, hhmm) => {
-  if (!hhmm) return null;
-  const [hours, minutes] = hhmm.split(':').map(Number);
-  const combined = new Date(date);
-  combined.setHours(hours, minutes, 0, 0);
-  return combined;
-};
 
 const getTrainerAttendance = asyncHandler(async (req, res) => {
   const { page, limit, skip } = parseListQuery(req);
@@ -63,10 +62,25 @@ const getTrainerAttendance = asyncHandler(async (req, res) => {
   res.json(paginatedResponse({ items, total, page, limit }));
 });
 
-// @desc    Record a trainer's check-in for a batch session. Computes
-//          lateness against the batch's slot start time (with a grace
-//          period) and always starts as a "pending" request awaiting
-//          verification.
+// @desc    Record a trainer's check-in for a batch session. Only allowed
+//          inside the check-in window — [scheduled start - 15min, scheduled
+//          end + 15min] — for ADMIN; outside that window (too early, or
+//          after the 15-minute-after-end grace period has passed and
+//          attendance has auto-closed) is rejected. Late is computed
+//          against the batch's slot start time: any check-in after the
+//          scheduled start is Late, no additional tolerance.
+//
+//          SUPER_ADMIN always retains override authority: the window
+//          restriction never applies to them, and they can also override an
+//          ALREADY-recorded day (re-check-in for a trainer/batch/date that
+//          already has a record — normally rejected as a duplicate). Either
+//          form of override — outside the window, or overwriting an
+//          existing record — always marks the trainer Present (isLate:
+//          false), since it's an explicit manual correction, not a live
+//          tardy check-in. A SUPER_ADMIN check-in that's inside the window
+//          AND doesn't touch an existing record behaves exactly like an
+//          ADMIN's — late is computed normally, same as anyone's real-time
+//          check-in.
 // @route   POST /api/trainer-attendance/check-in
 const checkIn = asyncHandler(async (req, res) => {
   const { trainer, batch, date, checkInTime, remarks } = req.body;
@@ -87,41 +101,90 @@ const checkIn = asyncHandler(async (req, res) => {
   }
 
   const checkInDate = new Date(checkInTime);
-  const expectedStart = batchDoc.slot ? combineDateAndTime(date, batchDoc.slot.startTime) : null;
+  // No slot on this batch -> no window can be derived, so (same as before)
+  // nothing is time-gated and nothing is ever marked late.
+  const { withinWindow, expectedStart } = getCheckInWindow(batchDoc.slot, date, checkInDate);
 
-  let isLate = false;
-  let lateMinutes = 0;
-  if (expectedStart) {
-    const diffMinutes = Math.round((checkInDate - expectedStart) / 60000);
-    if (diffMinutes > GRACE_MINUTES) {
-      isLate = true;
-      lateMinutes = diffMinutes;
+  const isSuperAdmin = req.user.role === ROLES.SUPER_ADMIN;
+  const existing = await TrainerAttendance.findOne({ trainer, batch, date: new Date(date) });
+
+  if (!isSuperAdmin) {
+    if (!withinWindow) {
+      res.status(403);
+      throw new Error('Attendance is closed for this class — outside the 15-minute check-in window.');
     }
-  }
-
-  let record;
-  try {
-    record = await TrainerAttendance.create({
-      trainer,
-      batch,
-      date,
-      checkInTime: checkInDate,
-      expectedStartTime: batchDoc.slot?.startTime,
-      isLate,
-      lateMinutes,
-      status: 'pending',
-      markedBy: req.user._id,
-      remarks,
-    });
-  } catch (err) {
-    if (err.code === 11000) {
+    if (existing) {
       res.status(400);
       throw new Error('This trainer already has an attendance record for this batch on this date');
     }
-    throw err;
   }
 
-  res.status(201).json({ success: true, data: await record.populate(POPULATE) });
+  // A SUPER_ADMIN doing anything an ADMIN couldn't (checking in outside the
+  // window, or re-checking-in a day that's already recorded) is an explicit
+  // override — always Present. Otherwise (inside the window, no existing
+  // record) lateness is computed normally, same as any other check-in.
+  const isOverride = isSuperAdmin && (!withinWindow || Boolean(existing));
+  const { isLate, lateMinutes } = getLateness(expectedStart, checkInDate, isOverride);
+
+  const fields = {
+    checkInTime: checkInDate,
+    expectedStartTime: batchDoc.slot?.startTime,
+    isLate,
+    lateMinutes,
+    markedBy: req.user._id,
+    remarks,
+    // Always 'manual' here — this whole controller is the Admin/Super Admin
+    // manual mark/override path, never the Trainer Portal's own self-check-in
+    // (see trainerSelfAttendance.controller.js, the only place 'method:
+    // self-verified' is ever set). Explicit so a SUPER_ADMIN overriding an
+    // existing self-verified record doesn't leave its old Face/Location
+    // verification result stale and misleadingly still attached to what is
+    // now a manual entry.
+    verification: { method: 'manual' },
+  };
+
+  let record;
+  let statusCode;
+  if (existing) {
+    // Only reachable here for a SUPER_ADMIN override (ADMIN already rejected
+    // above) — checkOutTime/duration/verification reset since this is a
+    // fresh check-in event overwriting the prior one, not an edit of it.
+    existing.set({
+      ...fields,
+      checkOutTime: undefined,
+      durationMinutes: undefined,
+      status: 'pending',
+      verifiedBy: undefined,
+      verifiedAt: undefined,
+    });
+    record = await existing.save();
+    statusCode = 200;
+  } else {
+    try {
+      record = await TrainerAttendance.create({ trainer, batch, date, status: 'pending', ...fields });
+      statusCode = 201;
+    } catch (err) {
+      if (err.code !== 11000) throw err;
+      // Race: another request created the record between our findOne and
+      // this create.
+      if (!isSuperAdmin) {
+        // An ADMIN never overrides — same rejection as if `existing` had
+        // been found up front.
+        res.status(400);
+        throw new Error('This trainer already has an attendance record for this batch on this date');
+      }
+      // SUPER_ADMIN's check-in is supposed to always succeed — retry as an
+      // override against whatever just got created, rather than surfacing
+      // a raw duplicate-key error.
+      const race = await TrainerAttendance.findOne({ trainer, batch, date: new Date(date) });
+      if (!race) throw err;
+      race.set({ ...fields, checkOutTime: undefined, durationMinutes: undefined, status: 'pending', verifiedBy: undefined, verifiedAt: undefined });
+      record = await race.save();
+      statusCode = 200;
+    }
+  }
+
+  res.status(statusCode).json({ success: true, data: await record.populate(POPULATE) });
 });
 
 // @desc    Record check-out time and compute session duration.
@@ -184,10 +247,47 @@ const deleteTrainerAttendance = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Attendance record deleted' });
 });
 
+// @desc    Admin/Super Admin QR attendance scanner (Trainer). Identifies the
+//          trainer from their scanned Trainer ID Card QR — never a
+//          client-supplied trainer id — and checks them in through the
+//          exact same rules the Trainer Portal's own self-check-in uses
+//          (see utils/trainerQrAttendance.js): whichever batch is actually
+//          in session right now, same 15-minute check-in window, same
+//          duplicate-day rejection. The one difference: campus scope. For
+//          ADMIN, requireAdminCampusScope always applies (a real selection,
+//          or a sentinel matching nothing) — scanning a trainer whose
+//          in-session class is at a different campus is rejected as
+//          unauthorized. SUPER_ADMIN is unrestricted, same as every other
+//          endpoint in this file. Unlike `checkIn` above, this never
+//          overrides an existing record or the time window — a QR scan is
+//          a live "they're here right now" action, not a manual correction.
+// @route   POST /api/trainer-attendance/scan
+const scanTrainerAttendance = asyncHandler(async (req, res) => {
+  const parsed = parseTrainerQrPayload(req.body.qrPayload);
+
+  const trainer = await Trainer.findById(parsed.trainerId).populate('user', 'name');
+  if (!trainer) {
+    res.status(404);
+    throw new Error('No trainer found for this ID card.');
+  }
+
+  const campusScope = requireAdminCampusScope(req);
+  const result = await checkInTrainerFromActiveSession(trainer._id, {
+    campusScope,
+    markedByUserId: req.user._id,
+  });
+
+  res.status(201).json({
+    success: true,
+    data: { trainerName: trainer.user?.name, ...result },
+  });
+});
+
 module.exports = {
   getTrainerAttendance,
   checkIn,
   checkOut,
   verifyAttendance,
   deleteTrainerAttendance,
+  scanTrainerAttendance,
 };

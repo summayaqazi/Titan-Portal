@@ -20,6 +20,17 @@ const trainerSchema = new mongoose.Schema(
     hourlyRate: { type: Number, min: 0 },
     profileImage: { type: String },
     courses: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Course' }],
+
+    // Face + Location Attendance — a 128-dimension face-api.js descriptor
+    // (a mathematical representation, never a raw photo/frame), captured
+    // client-side from a live, liveness-checked camera capture and
+    // compared server-side on every self-check-in. `select: false` so it's
+    // never returned by any existing/future query (including the ones this
+    // feature itself doesn't explicitly opt into it) unless a controller
+    // deliberately asks for it via .select('+faceDescriptor') — defense in
+    // depth against ever leaking it to a client response by accident.
+    faceDescriptor: { type: [Number], select: false },
+    faceEnrolledAt: { type: Date },
   },
   { timestamps: true }
 );

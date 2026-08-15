@@ -17,19 +17,24 @@ const { APPLICATION_STATUSES } = require('../utils/constants');
 
 const POPULATE = [
   { path: 'applicant', populate: { path: 'user', select: 'name email phone' } },
-  { path: 'job', select: 'title jobType status openingDate closingDate' },
+  { path: 'job', select: 'title jobType city status openingDate closingDate' },
 ];
 
 const serializeApplication = (application) => ({
   _id: application._id,
   status: application.status,
   appliedDate: application.appliedDate,
+  // Public path (server/src/uploads/, mounted by express.static) — the
+  // applicant's own submitted photo, distinct from the job's own image
+  // (never exposed here either — this serializer never returns job.image).
+  photoPath: application.photoPath || null,
   qualification: application.qualification,
   experience: application.experience,
   skills: application.skills,
   subjectCommand: application.subjectCommand,
   languages: application.languages,
   links: application.links,
+  applicationMethod: application.applicationMethod,
   hasResume: Boolean(application.resumePath),
   resumeFilename: application.resumePath ? path.basename(application.resumePath) : null,
   history: (application.history || []).map((h) => ({ status: h.status, note: h.note, changedAt: h.changedAt })),
@@ -46,6 +51,7 @@ const serializeApplication = (application) => ({
         _id: application.job._id,
         title: application.job.title,
         jobType: application.job.jobType,
+        city: application.job.city,
         status: application.job.status,
         closingDate: application.job.closingDate,
       }

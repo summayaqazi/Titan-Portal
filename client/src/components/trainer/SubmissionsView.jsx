@@ -293,12 +293,27 @@ export default function SubmissionsView({ assignment, onBack }) {
               )}
 
               <div className="flex gap-2 border-t border-slate-100 pt-4">
-                <Button onClick={() => setModalAction('approved')}>
-                  <Check size={15} /> Approve
-                </Button>
-                <Button variant="danger" onClick={() => setModalAction('rejected')}>
-                  <XIcon size={15} /> Reject
-                </Button>
+                {/* Approve/Reject only ever show on a still-pending
+                    submission — once reviewed, Delete is the only action
+                    left, per spec. Checked against `selected.status`, the
+                    real persisted value from the last load()/re-fetch, never
+                    a separate local flag that could drift from it. Side
+                    effect: FeedbackModal's "edit existing feedback" mode
+                    (see its own isEdit/initialFeedback handling) is no
+                    longer reachable for an already-reviewed submission,
+                    since Approve/Reject were its only entry point — no
+                    replacement entry point was requested, so none was
+                    added here. */}
+                {selected.status === 'pending' && (
+                  <>
+                    <Button onClick={() => setModalAction('approved')}>
+                      <Check size={15} /> Approve
+                    </Button>
+                    <Button variant="danger" onClick={() => setModalAction('rejected')}>
+                      <XIcon size={15} /> Reject
+                    </Button>
+                  </>
+                )}
                 <Button variant="danger" onClick={() => setDeleteTarget(selected)}>
                   <Trash2 size={15} /> Delete
                 </Button>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Download, Filter, Plus, Search, X } from 'lucide-react';
 import {
   PageContainer,
@@ -107,11 +108,23 @@ export default function Students() {
   const canUpdate = can('students', 'update');
   const canDelete = can('students', 'delete');
   const canExport = can('students', 'export');
+  const navigate = useNavigate();
 
   // Undefined for every role but ADMIN, so this list request (and every
   // other request below) is byte-for-byte unchanged for Super Admin.
   const campusFilter = useAdminCampusFilter();
   const listStudents = (params) => studentsApi.list({ ...params, campus: campusFilter });
+
+  // Supports a deep link pre-filtered by enrollment status
+  // (?enrollmentStatus=pending) — read once on mount only, same as
+  // Applications.jsx/Jobs.jsx's own initial-filter-from-URL reads. No
+  // dashboard card links here with this param anymore (the "Student
+  // Registrations" card family now points at the separate Registrations
+  // module — see Dashboard.jsx) — this stays for the Filter modal's own
+  // "Enrollment Status" control and any other future deep link into an
+  // already-enrolled student's academic status.
+  const [searchParams] = useSearchParams();
+  const initialEnrollmentStatus = searchParams.get('enrollmentStatus');
 
   const {
     items,
@@ -127,7 +140,10 @@ export default function Students() {
     error,
     refetch,
     handleDeleted,
-  } = useCrudResource(listStudents, { limit: 10 });
+  } = useCrudResource(listStudents, {
+    limit: 10,
+    initialFilters: initialEnrollmentStatus ? { enrollmentStatus: initialEnrollmentStatus } : {},
+  });
 
   const [cities, setCities] = useState([]);
   const [batches, setBatches] = useState([]);
@@ -253,7 +269,16 @@ export default function Students() {
     },
     {
       key: 'enrollmentStatus',
-      header: 'Enrollment',
+      // "Enrollment Status" (not just "Enrollment") — this is an already-
+      // legitimate Student's per-course academic/admission status
+      // (Enrollment.status), e.g. "Pending" here can mean "course admission
+      // still pending for this existing student" just as easily as
+      // "Enrolled"/"Dropout"/etc. It is NEVER a registration under review —
+      // an unapproved Registration never reaches this table at all (see
+      // Registration.js's header comment). The clearer label is here only
+      // so that reading "Pending" in this column is never mistaken for a
+      // pending Registration.
+      header: 'Enrollment Status',
       render: (row) => (row.activeEnrollment ? <StatusBadge status={row.activeEnrollment.status} /> : '—'),
     },
     {
@@ -279,6 +304,12 @@ export default function Students() {
     <PageContainer
       title="Students"
       description="Manage student records and course enrollments"
+      // Now on for both roles that reach this page: Admin already had it,
+      // and Super Admin's own sidebar/dashboard "Total Students" stat land
+      // here too — no role gate needed on this one. The dashboard's
+      // "Student Registrations" card family links to the separate
+      // Registrations module instead (see Dashboard.jsx) — never here.
+      onBack={() => navigate(-1)}
       actions={
         <div className="flex items-center gap-2">
           {canExport && (

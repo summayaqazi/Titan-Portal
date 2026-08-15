@@ -74,7 +74,18 @@ const submitApplication = asyncHandler(async (req, res) => {
     throw new Error('Applications for this job have closed');
   }
 
-  if (job.resumeRequired && !req.file) {
+  // Both files arrive via uploadApplicationFiles.fields(...) (see
+  // applicantPortal.routes.js) — req.files, not req.file, keyed by field
+  // name. The photo is mandatory for every application, unconditionally
+  // (distinct from resume, which stays conditional on job.resumeRequired).
+  const photoFile = req.files?.photo?.[0];
+  const resumeFile = req.files?.resume?.[0];
+
+  if (!photoFile) {
+    res.status(400);
+    throw new Error('A profile photo is required to apply for this job');
+  }
+  if (job.resumeRequired && !resumeFile) {
     res.status(400);
     throw new Error('A resume/CV is required to apply for this job');
   }
@@ -107,9 +118,17 @@ const submitApplication = asyncHandler(async (req, res) => {
       subjectCommand,
       languages,
       links,
+      // Public storage (server/src/uploads/, mounted by express.static) —
+      // same convention as every other profile-picture upload in the app.
+      // Always present — checked above.
+      photoPath: `/uploads/${photoFile.filename}`,
       // Private storage only (server/src/private-uploads/resumes/, never
       // mounted by express.static) — never a /uploads/... public path.
-      resumePath: req.file ? `private-uploads/resumes/${req.file.filename}` : undefined,
+      resumePath: resumeFile ? `private-uploads/resumes/${resumeFile.filename}` : undefined,
+      // Always this — the public Job Portal form is the only submission
+      // channel today; never read from req.body (see the field comment on
+      // the model), same discipline as status below.
+      applicationMethod: 'Online Application',
       status: 'pending',
       history: [{ status: 'pending', note: 'Application submitted', changedBy: req.user._id }],
     });
@@ -130,7 +149,8 @@ const submitApplication = asyncHandler(async (req, res) => {
       applicationId: application._id,
       status: application.status,
       appliedDate: application.appliedDate,
-      job: { _id: job._id, title: job.title },
+      applicationMethod: application.applicationMethod,
+      job: { _id: job._id, title: job.title, jobType: job.jobType, city: job.city },
     },
   });
 });
@@ -146,6 +166,7 @@ const serializeJobForApplicant = (job) => {
     _id: job._id,
     title: job.title,
     jobType: job.jobType,
+    city: job.city,
     experience: job.experience,
     qualification: job.qualification,
     about: job.about,
@@ -181,12 +202,17 @@ const serializeApplicationDetail = (application) => ({
   _id: application._id,
   status: application.status,
   appliedDate: application.appliedDate,
+  // Public path (server/src/uploads/, mounted by express.static) — safe to
+  // expose directly, unlike resumePath below. Distinct from the job's own
+  // image (serializeJobForApplicant never exposes one either).
+  photoPath: application.photoPath || null,
   qualification: application.qualification,
   experience: application.experience,
   skills: application.skills,
   subjectCommand: application.subjectCommand,
   languages: application.languages,
   links: application.links,
+  applicationMethod: application.applicationMethod,
   hasResume: Boolean(application.resumePath),
   resumeFilename: application.resumePath ? path.basename(application.resumePath) : null,
   history: (application.history || []).map((h) => ({ status: h.status, note: h.note, changedAt: h.changedAt })),
@@ -201,7 +227,7 @@ const serializeApplicationDetail = (application) => ({
 // @access  Private (APPLICANT)
 const getDashboard = asyncHandler(async (req, res) => {
   const applications = await Application.find({ applicant: req.applicant._id })
-    .populate('job', 'title jobType status closingDate')
+    .populate('job', 'title jobType city status closingDate')
     .sort({ appliedDate: -1 });
 
   const counts = { total: applications.length, pending: 0, under_review: 0, shortlisted: 0, approved: 0, rejected: 0 };
@@ -221,8 +247,13 @@ const getDashboard = asyncHandler(async (req, res) => {
 // @desc    List every application belonging to the logged-in Applicant.
 //          Paginated (parseListQuery/paginatedResponse — same convention as
 //          every other list endpoint in the app) with an optional status
-//          filter. No text search — an applicant's own application count is
-//          small enough that a search box would be overbuilding it.
+//          filter, and an optional job filter (same `?job=` param Super
+//          Admin's getApplications in application.controller.js already
+//          supports) — used by the public JobApply page to check "have I
+//          already applied to THIS job?" against the real Application
+//          collection instead of always showing the form. No text search —
+//          an applicant's own application count is small enough that a
+//          search box would be overbuilding it.
 // @route   GET /api/applicant/me/applications
 // @access  Private (APPLICANT)
 const getMyApplications = asyncHandler(async (req, res) => {
@@ -232,10 +263,13 @@ const getMyApplications = asyncHandler(async (req, res) => {
   if (req.query.status && APPLICATION_STATUSES.includes(req.query.status)) {
     filter.status = req.query.status;
   }
+  if (req.query.job) {
+    filter.job = req.query.job;
+  }
 
   const [applications, total] = await Promise.all([
     Application.find(filter)
-      .populate('job', 'title jobType status closingDate')
+      .populate('job', 'title jobType city status closingDate')
       .sort({ appliedDate: -1 })
       .skip(skip)
       .limit(limit),

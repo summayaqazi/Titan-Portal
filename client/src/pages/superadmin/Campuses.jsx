@@ -20,7 +20,12 @@ import campusesApi from '../../api/campusesApi';
 import citiesApi from '../../api/citiesApi';
 import { useAuth } from '../../context/AuthContext';
 
-const emptyForm = { name: '', city: '', address: '', contactNumber: '', isActive: true };
+// latitude/longitude/attendanceRadiusMeters — added for Trainer Face +
+// Location Attendance's geofence check (see campus.controller.js). All
+// optional: a campus can be saved with these left blank, same as before
+// this feature existed; trainer self-check-in for that campus just stays
+// unavailable ("location isn't configured yet") until they're filled in.
+const emptyForm = { name: '', city: '', address: '', contactNumber: '', isActive: true, latitude: '', longitude: '', attendanceRadiusMeters: '' };
 
 function CampusFormDrawer({ open, onClose, campus, cities, onSubmit }) {
   const [form, setForm] = useState(emptyForm);
@@ -39,6 +44,9 @@ function CampusFormDrawer({ open, onClose, campus, cities, onSubmit }) {
             address: campus.address || '',
             contactNumber: campus.contactNumber || '',
             isActive: campus.isActive,
+            latitude: campus.location?.lat ?? '',
+            longitude: campus.location?.lng ?? '',
+            attendanceRadiusMeters: campus.attendanceRadiusMeters ?? '',
           }
         : emptyForm
     );
@@ -56,6 +64,12 @@ function CampusFormDrawer({ open, onClose, campus, cities, onSubmit }) {
       setError('');
       if (!form.name || !form.city) {
         setError('Campus name and city are required');
+        return;
+      }
+      const hasLat = form.latitude !== '' && form.latitude != null;
+      const hasLng = form.longitude !== '' && form.longitude != null;
+      if (hasLat !== hasLng) {
+        setError('Please provide both latitude and longitude, or leave both blank');
         return;
       }
       setSubmitting(true);
@@ -106,6 +120,48 @@ function CampusFormDrawer({ open, onClose, campus, cities, onSubmit }) {
         <FormField label="Contact Number" htmlFor="contactNumber">
           <Input id="contactNumber" value={form.contactNumber} onChange={handleChange('contactNumber')} />
         </FormField>
+
+        {/* Optional — used only for Trainer Face + Location Attendance's
+            geofence check (see campus.controller.js). Left blank, a
+            trainer's self-check-in for this campus stays unavailable with a
+            clear "not configured yet" message; nothing else in the app
+            reads these. */}
+        <p className="-mt-2 mb-3 text-xs text-slate-400">Optional — enables Trainer Face + Location Attendance for this campus.</p>
+        <FormField label="Latitude" htmlFor="latitude">
+          <Input
+            id="latitude"
+            type="number"
+            step="any"
+            min={-90}
+            max={90}
+            value={form.latitude}
+            onChange={handleChange('latitude')}
+            placeholder="e.g. 27.7052"
+          />
+        </FormField>
+        <FormField label="Longitude" htmlFor="longitude">
+          <Input
+            id="longitude"
+            type="number"
+            step="any"
+            min={-180}
+            max={180}
+            value={form.longitude}
+            onChange={handleChange('longitude')}
+            placeholder="e.g. 68.8574"
+          />
+        </FormField>
+        <FormField label="Attendance Radius (meters)" htmlFor="attendanceRadiusMeters">
+          <Input
+            id="attendanceRadiusMeters"
+            type="number"
+            min={10}
+            value={form.attendanceRadiusMeters}
+            onChange={handleChange('attendanceRadiusMeters')}
+            placeholder="200 (default if left blank)"
+          />
+        </FormField>
+
         <FormField label="Active" htmlFor="isActive">
           <label className="flex items-center gap-2 text-sm text-slate-600">
             <input id="isActive" type="checkbox" checked={form.isActive} onChange={handleChange('isActive')} />

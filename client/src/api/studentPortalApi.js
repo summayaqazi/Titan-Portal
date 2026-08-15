@@ -10,6 +10,12 @@ const studentPortalApi = {
   getAttendance: (month) =>
     axiosInstance.get('/student/me/attendance', { params: month ? { month } : {} }).then((res) => res.data.data),
 
+  // `qrPayload` is the raw decoded QR text (a JSON string) — parsed and
+  // verified entirely server-side (see markOwnAttendanceViaQr), never
+  // trusted or re-validated here.
+  scanAttendance: (qrPayload) =>
+    axiosInstance.post('/student/me/attendance/scan', { qrPayload }).then((res) => res.data.data),
+
   getPayments: () => axiosInstance.get('/student/me/payments').then((res) => res.data.data),
 
   getAssignments: () => axiosInstance.get('/student/me/assignments').then((res) => res.data.data),
@@ -34,6 +40,12 @@ const studentPortalApi = {
   // a page refresh) — the server returns the same attempt/deadline rather
   // than a new one, so this call is safe to repeat.
   startQuiz: (quizId) => axiosInstance.post(`/student/me/quizzes/${quizId}/start`).then((res) => res.data.data),
+
+  // Periodic autosave while a quiz is in progress — never grades anything,
+  // just persists answers-so-far so a resumed/refreshed session sees
+  // up-to-date state.
+  saveQuizProgress: (attemptId, answers) =>
+    axiosInstance.put(`/student/me/quiz-attempts/${attemptId}/progress`, { answers }).then((res) => res.data.data),
 
   submitQuizAttempt: (attemptId, answers) =>
     axiosInstance.post(`/student/me/quiz-attempts/${attemptId}/submit`, { answers }).then((res) => res.data.data),

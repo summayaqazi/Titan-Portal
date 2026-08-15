@@ -236,14 +236,19 @@ const getCourseWorkspace = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Students Tab — only students enrolled (via Enrollment) in this
-//          trainer's own batch, never a direct Course-on-Student lookup.
+// @desc    Students Tab — only students actually enrolled (status
+//          'enrolled', via Enrollment) in this trainer's own batch, never a
+//          direct Course-on-Student lookup. Every other Enrollment lifecycle
+//          state (pending/approved/rejected registration-stage rows,
+//          completed/certified/dropout/etc. past states) is deliberately
+//          excluded — a Trainer's roster is "who's actually enrolled right
+//          now", not the full history.
 // @route   GET /api/trainer/me/courses/:batchId/students?page=&limit=&search=
 // @access  Private (TRAINER)
 const getCourseStudents = asyncHandler(async (req, res) => {
   const { page, limit, search, skip } = parseListQuery(req);
 
-  const filter = { batch: req.batch._id };
+  const filter = { batch: req.batch._id, status: 'enrolled' };
 
   const enrollments = await Enrollment.find(filter)
     .populate({ path: 'student', populate: { path: 'user', select: 'name email phone avatar' } })

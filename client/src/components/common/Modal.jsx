@@ -19,7 +19,7 @@ export default function Modal({ open, onClose, title, children, footer, size = '
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      className="fixed inset-0 z-50 flex cursor-pointer items-center justify-center bg-slate-900/40 p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -28,7 +28,12 @@ export default function Modal({ open, onClose, title, children, footer, size = '
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`flex max-h-[90vh] w-full ${sizeClass} flex-col rounded-lg bg-white shadow-xl`}
+        // Resets the backdrop's cursor: pointer (see the wrapper above) —
+        // `cursor` inherits by default, and without this every plain-text
+        // element inside the actual dialog (not just its buttons/links,
+        // which already get their own pointer via the global rule) would
+        // incorrectly show a pointer cursor too.
+        className={`flex max-h-[90vh] w-full ${sizeClass} cursor-auto flex-col rounded-lg bg-white shadow-xl`}
       >
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 sm:px-5 sm:py-4">
           <h2 className="text-base font-semibold text-slate-800">{title}</h2>

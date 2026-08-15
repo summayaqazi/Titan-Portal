@@ -11,6 +11,7 @@ import Unauthorized from './pages/Unauthorized';
 import SuperAdminLayout from './components/layout/SuperAdminLayout';
 import Dashboard from './pages/superadmin/Dashboard';
 import Students from './pages/superadmin/Students';
+import Registrations from './pages/superadmin/Registrations';
 import Courses from './pages/superadmin/Courses';
 import Batches from './pages/superadmin/Batches';
 import Campuses from './pages/superadmin/Campuses';
@@ -35,6 +36,10 @@ import TrainerAttendanceRequests from './pages/admin/TrainerAttendanceRequests';
 import TrainerDashboard from './pages/trainer/Dashboard';
 import TrainerCalendar from './pages/trainer/Calendar';
 import TrainerAttendanceTab from './pages/trainer/Attendance';
+// Renamed on import (not `TrainerMarkAttendance`) to avoid colliding with
+// the existing Admin-portal page of that exact name imported above — that
+// page (Admin's manual mark/override) is untouched by this feature.
+import TrainerMarkAttendancePage from './pages/trainer/MarkAttendance';
 import TrainerProfile from './pages/trainer/Profile';
 import TrainerCourseWorkspace from './pages/trainer/CourseWorkspace';
 
@@ -106,13 +111,14 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
 
-          {/* Public course discovery + registration/enrollment flow —
-              unauthenticated on purpose, sits outside ProtectedRoute below.
-              A brand-new visitor with no account yet: Courses -> Course
-              Details -> Enroll Now -> Register -> pending Enrollment ->
-              existing Admin/Super Admin approval workflow -> existing
-              Student Portal login. Nothing under ProtectedRoute is touched
-              by these routes. */}
+          {/* Public course discovery + registration flow — unauthenticated
+              on purpose, sits outside ProtectedRoute below. A brand-new
+              visitor with no account yet: Courses -> Course Details ->
+              Enroll Now -> Register -> pending Registration (no User/
+              Student exists yet) -> Super Admin/Admin review in the
+              Registrations module -> approval creates the Student -> the
+              Student Portal login they set a password for now works.
+              Nothing under ProtectedRoute is touched by these routes. */}
           <Route path="/courses" element={<PublicCourses />} />
           <Route path="/courses/:courseId" element={<PublicCourseDetails />} />
           <Route path="/register" element={<PublicRegister />} />
@@ -137,6 +143,11 @@ export default function App() {
                 <Route index element={<Navigate to="dashboard" replace />} />
                 {moduleRoute('dashboard', 'dashboard', <Dashboard />)}
                 {moduleRoute('students', 'students', <Students />)}
+                {/* Deliberately its own route/component/module — a
+                    Registration is reviewed before any Student exists, see
+                    Registration.js's header comment. Never reuses Students
+                    or its route. */}
+                {moduleRoute('registrations', 'registrations', <Registrations />)}
                 {moduleRoute('courses', 'courses', <Courses />)}
                 {moduleRoute('batches', 'batches', <Batches />)}
                 {moduleRoute('campuses', 'campuses', <Campuses />)}
@@ -159,6 +170,14 @@ export default function App() {
                 <Route index element={<Navigate to="dashboard" replace />} />
                 {adminModuleRoute('dashboard', 'dashboard', <Dashboard />)}
                 {adminModuleRoute('students', 'students', <Students />)}
+                {/* Same 'registrations' permission as Super Admin — unset
+                    (false) for Admin by default in seed.js, so RoleRoute's
+                    own can(module,'view') check keeps this page
+                    unreachable until a Super Admin explicitly grants it on
+                    the Roles & Permissions page. Registered here
+                    regardless, same convention as every other
+                    Admin-reachable module route. */}
+                {adminModuleRoute('registrations', 'registrations', <Registrations />)}
                 {adminModuleRoute('attendance', 'attendance/mark', <MarkAttendance />)}
                 {adminModuleRoute('attendance', 'attendance/view', <ViewAttendance />)}
                 {adminModuleRoute('attendance', 'attendance/multi', <MultiAttendance />)}
@@ -194,6 +213,7 @@ export default function App() {
                 {trainerModuleRoute('dashboard', 'calendar', <TrainerCalendar />)}
                 {trainerModuleRoute('dashboard', 'courses/:batchId', <TrainerCourseWorkspace />)}
                 {trainerModuleRoute('attendance', 'attendance', <TrainerAttendanceTab />)}
+                {trainerModuleRoute('attendance', 'attendance/mark', <TrainerMarkAttendancePage />)}
                 {trainerModuleRoute('profile', 'profile', <TrainerProfile />)}
               </Route>
             </Route>

@@ -2,8 +2,16 @@ const asyncHandler = require('express-async-handler');
 const Attendance = require('../models/Attendance');
 const Enrollment = require('../models/Enrollment');
 const Batch = require('../models/Batch');
+const Student = require('../models/Student');
 const { parseListQuery, paginatedResponse } = require('../utils/queryHelpers');
 const { scopeBatchFilterToCampus, requireAdminCampusScope } = require('../utils/campusScope');
+// Same QR parsing + schedule-resolution + marking logic the Student
+// Portal's own self-scan (markOwnAttendanceViaQr in
+// studentPortal.controller.js) already uses — see
+// utils/studentQrAttendance.js's own header comment. scanStudentAttendance
+// below is the only other caller; it exists so Admin/Super Admin can scan
+// a student's ID card instead of that student scanning their own.
+const { parseStudentQrPayload, markStudentAttendanceFromActiveSession } = require('../utils/studentQrAttendance');
 
 const summarizeAttendance = async (enrollmentId) => {
   const records = await Attendance.find({ enrollment: enrollmentId });
@@ -171,6 +179,41 @@ const multiMarkAttendance = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Admin/Super Admin QR attendance scanner (Student). Identifies the
+//          student from their scanned Student ID Card QR — never a
+//          client-supplied student id — and marks attendance through the
+//          exact same rules the student's own self-scan uses (see
+//          utils/studentQrAttendance.js): only for whichever enrollment is
+//          actually in session right now, idempotent if already marked. The
+//          one difference from the self-scan: campus scope. For ADMIN,
+//          requireAdminCampusScope always applies (a real selection, or a
+//          sentinel matching nothing) — scanning a student enrolled at a
+//          different campus is rejected as unauthorized, never silently
+//          marks it. SUPER_ADMIN is unrestricted, same as every other
+//          endpoint in this file.
+// @route   POST /api/attendance/scan
+const scanStudentAttendance = asyncHandler(async (req, res) => {
+  const parsed = parseStudentQrPayload(req.body.qrPayload);
+
+  const student = await Student.findById(parsed.studentId).populate('user', 'name');
+  if (!student) {
+    res.status(404);
+    throw new Error('No student found for this ID card.');
+  }
+
+  const campusScope = requireAdminCampusScope(req);
+  const { records, marked, allAlreadyMarked } = await markStudentAttendanceFromActiveSession(student._id, {
+    campusScope,
+    markedByUserId: req.user._id,
+    remarks: 'Marked via QR scan',
+  });
+
+  res.json({
+    success: true,
+    data: { studentName: student.user?.name, marked, allAlreadyMarked, records },
+  });
+});
+
 // @desc    List attendance records with filters
 // @route   GET /api/attendance
 const getAttendance = asyncHandler(async (req, res) => {
@@ -291,6 +334,7 @@ module.exports = {
   getRoster,
   markAttendance,
   multiMarkAttendance,
+  scanStudentAttendance,
   getAttendance,
   deleteAttendance,
   lookupByRollNumber,

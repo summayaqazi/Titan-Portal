@@ -22,6 +22,7 @@ const publicApplicantRoutes = require('./publicApplicant.routes');
 const applicantPortalRoutes = require('./applicantPortal.routes');
 const jobRoutes = require('./job.routes');
 const applicationRoutes = require('./application.routes');
+const registrationRoutes = require('./registration.routes');
 
 const router = express.Router();
 
@@ -65,6 +66,9 @@ router.use('/trainers', trainerRoutes);
 router.use('/trainer', trainerPortalRoutes);
 router.use('/students', studentRoutes);
 router.use('/student', studentPortalRoutes);
+// Public course-registration review queue — deliberately its own resource,
+// separate from '/students' above. See Registration.js's header comment.
+router.use('/registrations', registrationRoutes);
 router.use('/enrollments', enrollmentRoutes);
 router.use('/attendance', attendanceRoutes);
 router.use('/trainer-attendance', trainerAttendanceRoutes);

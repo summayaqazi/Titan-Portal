@@ -8,6 +8,48 @@ const recomputeTotalMarks = (quiz) => {
   quiz.totalMarks = quiz.questions.reduce((sum, q) => sum + (q.points || 0), 0);
 };
 
+// Validates the optional start/end availability window shared by
+// createQuiz/updateQuiz. Both are optional (see Quiz.js's own comment on
+// why), but if either is given it must be a real date, and an end given
+// without a start (or vice versa) — or an end at/before its start — is
+// rejected rather than silently accepted as a nonsensical window.
+// Returns { error } or { value: { startAt, endAt } } (values are `undefined`
+// for whichever side wasn't provided, so callers can `Object.assign`/set
+// only what's present without clobbering the other side on an update).
+const parseAvailabilityWindow = ({ startAt, endAt }) => {
+  const value = {};
+  if (startAt !== undefined) {
+    if (startAt === null || startAt === '') {
+      value.startAt = null;
+    } else {
+      const d = new Date(startAt);
+      if (Number.isNaN(d.getTime())) return { error: 'Invalid quiz start date/time' };
+      value.startAt = d;
+    }
+  }
+  if (endAt !== undefined) {
+    if (endAt === null || endAt === '') {
+      value.endAt = null;
+    } else {
+      const d = new Date(endAt);
+      if (Number.isNaN(d.getTime())) return { error: 'Invalid quiz end date/time' };
+      value.endAt = d;
+    }
+  }
+  return { value };
+};
+
+// Cross-field check run after merging the incoming values onto the quiz (so
+// it sees the final start/end pair regardless of whether this request
+// touched one, both, or neither) — an end date must be strictly after the
+// start date whenever both are actually set.
+const validateWindowOrder = (quiz) => {
+  if (quiz.startAt && quiz.endAt && quiz.endAt <= quiz.startAt) {
+    return 'Quiz end date/time must be after the start date/time';
+  }
+  return null;
+};
+
 // A 'scheduled' quiz has no cron flipping it live — instead, whenever one is
 // read (list or detail) and its scheduledAt has passed, it's flipped to
 // 'published' right here and persisted, so the stored status never lags
@@ -75,15 +117,30 @@ const createQuiz = asyncHandler(async (req, res) => {
     throw new Error('Title is required');
   }
 
-  const quiz = await Quiz.create({
+  const { error: windowError, value: window } = parseAvailabilityWindow(req.body);
+  if (windowError) {
+    res.status(400);
+    throw new Error(windowError);
+  }
+
+  const quiz = new Quiz({
     title: title.trim(),
     description,
     durationMinutes: durationMinutes || 30,
     course: req.batch.course,
     batch: req.batch._id,
     trainer: req.trainer._id,
+    startAt: window.startAt || undefined,
+    endAt: window.endAt || undefined,
   });
 
+  const orderError = validateWindowOrder(quiz);
+  if (orderError) {
+    res.status(400);
+    throw new Error(orderError);
+  }
+
+  await quiz.save();
   res.status(201).json({ success: true, data: quiz });
 });
 
@@ -103,6 +160,20 @@ const updateQuiz = asyncHandler(async (req, res) => {
   }
   if (description !== undefined) quiz.description = description;
   if (durationMinutes !== undefined) quiz.durationMinutes = durationMinutes;
+
+  const { error: windowError, value: window } = parseAvailabilityWindow(req.body);
+  if (windowError) {
+    res.status(400);
+    throw new Error(windowError);
+  }
+  if ('startAt' in window) quiz.startAt = window.startAt || undefined;
+  if ('endAt' in window) quiz.endAt = window.endAt || undefined;
+
+  const orderError = validateWindowOrder(quiz);
+  if (orderError) {
+    res.status(400);
+    throw new Error(orderError);
+  }
 
   await quiz.save();
   res.json({ success: true, data: quiz });

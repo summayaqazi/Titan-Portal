@@ -1,6 +1,7 @@
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { CheckCircle2 } from 'lucide-react';
 import PublicHeader from '../../components/public/PublicHeader';
+import PublicFooter from '../../components/public/PublicFooter';
 import { Button, StatusBadge } from '../../components/common';
 
 // Confirmation page shown right after a successful
@@ -20,8 +21,10 @@ export default function ApplicationSuccess() {
       <PublicHeader />
 
       <main className="mx-auto max-w-lg px-4 py-10 sm:px-6">
-        <div className="rounded-lg border border-slate-200 bg-white p-6 text-center sm:p-8">
-          <CheckCircle2 size={40} className="mx-auto mb-4 text-green-600" />
+        <div className="rounded-lg border border-slate-200 bg-white p-6 text-center shadow-sm sm:p-8">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-50">
+            <CheckCircle2 size={34} className="text-green-600" />
+          </div>
           <h1 className="text-xl font-semibold text-slate-800">Application Submitted</h1>
           <p className="mt-2 text-sm text-slate-500">Thank you for applying — your application has been received.</p>
 
@@ -30,6 +33,18 @@ export default function ApplicationSuccess() {
               <span className="text-slate-500">Job</span>
               <span className="font-medium text-slate-700">{result.job?.title}</span>
             </div>
+            {result.job?.city && (
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Location</span>
+                <span className="font-medium text-slate-700">{result.job.city}</span>
+              </div>
+            )}
+            {result.applicationMethod && (
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Applied Via</span>
+                <span className="font-medium text-slate-700">{result.applicationMethod}</span>
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <span className="text-slate-500">Applied On</span>
               <span className="font-medium text-slate-700">
@@ -59,6 +74,7 @@ export default function ApplicationSuccess() {
           </Link>
         </div>
       </main>
+      <PublicFooter />
     </div>
   );
 }

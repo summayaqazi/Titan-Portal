@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, CalendarDays, Clock, MapPin, Users } from 'lucide-react';
+import { ArrowLeft, CalendarDays, Clock, GraduationCap, MapPin, Users } from 'lucide-react';
 import PublicHeader from '../../components/public/PublicHeader';
+import PublicFooter from '../../components/public/PublicFooter';
 import { Button } from '../../components/common';
 import publicApi from '../../api/publicApi';
 
@@ -51,9 +52,17 @@ export default function CourseDetails() {
         {!error && !course && <div className="h-64 animate-pulse rounded-lg border border-slate-200 bg-white" />}
 
         {course && (
-          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+            {/* Thin brand accent — same navy as PublicHeader/PublicHero,
+                kept subtle here (not a full banner) since that would clash
+                with the Open/Closed badge's light background just below. */}
+            <div className="h-1.5 bg-(--color-sidebar)" />
             <div className="border-b border-slate-200 p-6 sm:p-8">
               <div className="mb-3 flex flex-wrap items-center gap-2">
+                {/* Same color tokens StatusBadge uses for open/closed, kept
+                    as its own span (not <StatusBadge>) only because this
+                    page wants the fuller "Registration open/closed" copy
+                    instead of StatusBadge's plain status-word label. */}
                 <span
                   className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
                     course.registrationOpen ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
@@ -84,7 +93,10 @@ export default function CourseDetails() {
               ) : (
                 <ul className="space-y-3">
                   {course.batches.map((batch) => (
-                    <li key={batch._id} className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-md border border-slate-200 p-3 text-sm text-slate-600">
+                    <li
+                      key={batch._id}
+                      className="flex flex-wrap items-center gap-x-6 gap-y-1.5 rounded-lg border border-slate-200 p-3.5 text-sm text-slate-600 transition-colors hover:border-primary-200 hover:bg-primary-50/40"
+                    >
                       <span className="font-medium text-slate-800">{batch.batchCode}</span>
                       {batch.campus && (
                         <span className="flex items-center gap-1.5">
@@ -97,6 +109,16 @@ export default function CourseDetails() {
                         <span className="flex items-center gap-1.5">
                           <Users size={14} className="shrink-0 text-slate-400" />
                           {batch.slot.label} ({batch.slot.startTime}–{batch.slot.endTime})
+                        </span>
+                      )}
+                      {/* Trainer — newly surfaced from GET /api/public/courses/:id
+                          (server/src/controllers/public.controller.js populates
+                          it now), same "relevant course data" every other field
+                          on this row already shows a prospective student. */}
+                      {batch.trainer && (
+                        <span className="flex items-center gap-1.5">
+                          <GraduationCap size={14} className="shrink-0 text-slate-400" />
+                          {batch.trainer.name}
                         </span>
                       )}
                       {batch.startDate && (
@@ -119,6 +141,7 @@ export default function CourseDetails() {
           </div>
         )}
       </main>
+      <PublicFooter />
     </div>
   );
 }

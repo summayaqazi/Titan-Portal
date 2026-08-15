@@ -1,6 +1,7 @@
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { CheckCircle2 } from 'lucide-react';
 import PublicHeader from '../../components/public/PublicHeader';
+import PublicFooter from '../../components/public/PublicFooter';
 import { Button, StatusBadge } from '../../components/common';
 
 // Confirmation page shown right after a successful POST /api/public/register.
@@ -24,8 +25,10 @@ export default function RegisterSuccess() {
       <PublicHeader />
 
       <main className="mx-auto max-w-lg px-4 py-10 sm:px-6">
-        <div className="rounded-lg border border-slate-200 bg-white p-6 text-center sm:p-8">
-          <CheckCircle2 size={40} className="mx-auto mb-4 text-green-600" />
+        <div className="rounded-lg border border-slate-200 bg-white p-6 text-center shadow-sm sm:p-8">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-50">
+            <CheckCircle2 size={34} className="text-green-600" />
+          </div>
           <h1 className="text-xl font-semibold text-slate-800">Registration Successful</h1>
           <p className="mt-2 text-sm text-slate-500">
             Thank you, {result.applicant?.name}. Your application has been received.
@@ -65,6 +68,7 @@ export default function RegisterSuccess() {
           </Link>
         </div>
       </main>
+      <PublicFooter />
     </div>
   );
 }

@@ -76,7 +76,14 @@ function formatDayRange(days) {
 function scheduleText(slot) {
   if (!slot) return 'No slot assigned';
   const time = `${formatTime12(slot.startTime)} – ${formatTime12(slot.endTime)}`;
-  const days = slot.days?.length ? formatDayRange(slot.days) : slot.label;
+  // Fewer than 7 days -> show the actual configured day-range (e.g.
+  // "Mon–Fri"), same as before. A slot scheduled every single day (7 of 7,
+  // e.g. a "Full Day" slot) collapses to a meaningless "Sun–Sat" range that
+  // silently drops what the slot is actually configured as — its own
+  // label (e.g. "Full Day") is the real source of truth there, so show
+  // that instead. Applies to any slot/course this shape occurs for, not
+  // just one — never a hardcoded "Sun–Sat" default either way.
+  const days = slot.days?.length && slot.days.length < 7 ? formatDayRange(slot.days) : slot.label;
   return `${days} · ${time}`;
 }
 

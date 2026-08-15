@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Briefcase, CheckCircle2, Clock, Eye, ListChecks, Search, XCircle } from 'lucide-react';
+import { Briefcase, CheckCircle2, Clock, Eye, ListChecks, MapPin, Search, XCircle } from 'lucide-react';
 import { PageContainer, EmptyState, StatusBadge, Button } from '../../components/common';
 import StatCard from '../../components/dashboard/StatCard';
 import applicantPortalApi from '../../api/applicantPortalApi';
 import { getErrorMessage } from '../../utils/errors';
+import { useAuth } from '../../context/AuthContext';
 
 function formatDate(dateStr) {
   if (!dateStr) return '—';
@@ -15,6 +16,7 @@ function formatDate(dateStr) {
 // to the logged-in applicant. Every count/row here is live data; nothing
 // hardcoded.
 export default function Dashboard() {
+  const { user } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -43,7 +45,10 @@ export default function Dashboard() {
   const recent = data?.recent || [];
 
   return (
-    <PageContainer title="Dashboard" description="Track the jobs you've applied for">
+    <PageContainer
+      title="Dashboard"
+      description={`Welcome back, ${user?.name || 'there'} — track the jobs you've applied for`}
+    >
       {error ? (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">{error}</div>
       ) : (
@@ -85,10 +90,11 @@ export default function Dashboard() {
             ) : (
               <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[560px] text-left text-sm">
+                  <table className="w-full min-w-[640px] text-left text-sm">
                     <thead>
                       <tr className="border-b border-slate-200 text-xs text-slate-500">
                         <th className="px-4 py-2.5 font-medium">Job Title</th>
+                        <th className="px-4 py-2.5 font-medium">City</th>
                         <th className="px-4 py-2.5 font-medium">Applied Date</th>
                         <th className="px-4 py-2.5 font-medium">Status</th>
                         <th className="px-4 py-2.5 text-right font-medium">Action</th>
@@ -99,6 +105,15 @@ export default function Dashboard() {
                         <tr key={application._id} className="border-b border-slate-100 last:border-0">
                           <td className="px-4 py-2.5 font-medium text-slate-700">
                             {application.job?.title || 'Job no longer available'}
+                          </td>
+                          <td className="px-4 py-2.5 text-slate-600">
+                            {application.job?.city ? (
+                              <span className="inline-flex items-center gap-1">
+                                <MapPin size={12} className="shrink-0 text-slate-400" /> {application.job.city}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
                           </td>
                           <td className="px-4 py-2.5 text-slate-600">{formatDate(application.appliedDate)}</td>
                           <td className="px-4 py-2.5">

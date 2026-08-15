@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { FileText, Plus, Receipt, RefreshCw, Search } from 'lucide-react';
 import {
   PageContainer,
@@ -20,6 +20,7 @@ import { getErrorMessage } from '../../utils/errors';
 import paymentsApi from '../../api/paymentsApi';
 import studentsApi, { enrollmentsApi } from '../../api/studentsApi';
 import { useAuth } from '../../context/AuthContext';
+import { ROLES } from '../../constants/roles';
 
 const METHODS = ['cash', 'bank_transfer', 'card', 'online', 'other'];
 const STATUSES = ['pending', 'paid', 'overdue', 'refunded'];
@@ -261,11 +262,13 @@ function PaymentFormDrawer({ open, onClose, payment, students, defaultStudentId,
 }
 
 export default function Payments() {
-  const { can } = useAuth();
+  const { user, can } = useAuth();
+  const isAdmin = user?.role === ROLES.ADMIN;
   const canCreate = can('payments', 'create');
   const canUpdate = can('payments', 'update');
   const canDelete = can('payments', 'delete');
   const canExport = can('payments', 'export');
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const {
@@ -456,6 +459,7 @@ export default function Payments() {
     <PageContainer
       title="Payments"
       description="Track student fee payments and installments"
+      onBack={isAdmin ? () => navigate(-1) : undefined}
       actions={
         canCreate && (
           <Button

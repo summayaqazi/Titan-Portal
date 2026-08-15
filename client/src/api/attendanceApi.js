@@ -13,6 +13,10 @@ const attendanceApi = {
   recent: (limit = 10, campus) =>
     axiosInstance.get('/attendance/recent', { params: { limit, campus } }).then((res) => res.data.data),
   summary: (enrollmentId) => axiosInstance.get(`/attendance/summary/${enrollmentId}`).then((res) => res.data.data),
+  // Admin/Super Admin QR scanner (Student ID Card) — `campus` scopes it to
+  // the Admin's own selected campus, same as lookup/multiMark above;
+  // undefined for Super Admin, so it stays unrestricted.
+  scanQr: (qrPayload, campus) => axiosInstance.post('/attendance/scan', { qrPayload, campus }).then((res) => res.data.data),
 };
 
 export default attendanceApi;

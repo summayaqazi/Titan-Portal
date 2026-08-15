@@ -87,18 +87,16 @@ const DEFAULT_ROLES = [
       // Updation is intentionally withheld from the Admin Portal — leave
       // unset so it falls back to `false` for every action.
       profile: { view: true, update: true },
-      // Job Portal Phase 5 — Campus Admin can view every job but only
-      // create/update/delete the ones they personally created
-      // (job.controller.js enforces this via Job.createdBy — the
-      // permission grid only controls whether the action is available at
-      // all, not which specific jobs it applies to, same division of
-      // responsibility as every other module here). No `export` — no CSV/
-      // PDF export exists for jobs. 'applications' is intentionally left
-      // unset here — Application review/shortlist/approve/reject stays a
-      // Super-Admin-only action this phase; falls back to `false` for
-      // every action, same as 'updation' above, and is a config-only
-      // change (Roles & Permissions page) to grant later if ever needed.
-      jobs: { view: true, create: true, update: true, delete: true },
+      // Campus Admin gets READ-ONLY job access — view only (job.controller.js
+      // additionally scopes what they can see to jobs tagged with their own
+      // assigned campus). No create/update/delete/export: job
+      // creation/editing/publishing/closing is Super-Admin-only, same as
+      // 'applications' below — a config-only change (Roles & Permissions
+      // page) to grant more later if ever needed.
+      jobs: { view: true },
+      // Application review/shortlist/approve/reject stays a Super-Admin-only
+      // action — intentionally left unset so it falls back to `false` for
+      // every action, same as 'updation' above.
     }),
   },
   {
@@ -108,10 +106,14 @@ const DEFAULT_ROLES = [
     isSystem: false,
     permissions: buildPermissions(false, {
       dashboard: { view: true },
-      // Trainer views their own roster and attendance history — marking is
-      // an Admin/Super Admin action, never a Trainer one.
+      // Trainer views their own roster and attendance history — bulk/manual
+      // marking stays an Admin/Super Admin action. create: the one
+      // self-service write — Face + Location verified attendance for their
+      // own scheduled session (see trainerSelfAttendance.controller.js).
+      // No update/delete — an already-marked record can't be changed by the
+      // trainer, only Admin/Super Admin retain that.
       students: { view: true },
-      attendance: { view: true },
+      attendance: { view: true, create: true },
       profile: { view: true, update: true },
       // Trainer fully manages their own assignments (never other trainers'
       // — enforced server-side by ownership checks, not this permission).
@@ -133,7 +135,13 @@ const DEFAULT_ROLES = [
       // the Trainer Portal's own Dashboard/Course Workspace routes use.
       dashboard: { view: true },
       payments: { view: true },
-      attendance: { view: true },
+      // view: existing read-only attendance history/summary. create: the
+      // one self-service write — marking today's own attendance by
+      // scanning their own Student ID Card QR (see
+      // markOwnAttendanceViaQr in studentPortal.controller.js). Never
+      // update/delete — an already-marked record can't be changed by the
+      // student, only Trainer/Admin retain that via attendance.controller.js.
+      attendance: { view: true, create: true },
       profile: { view: true, update: true },
       // Read-only curriculum progress, same reasoning as attendance above.
       progress: { view: true },
