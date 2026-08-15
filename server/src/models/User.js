@@ -28,6 +28,16 @@ const userSchema = new mongoose.Schema(
 
 userSchema.pre('save', async function () {
   if (!this.isModified('password')) return;
+  // A Student promoted from an approved Registration arrives here with its
+  // password already bcrypt-hashed (Registration.passwordHash — hashed at
+  // submission time so a pending Registration never stores a plaintext
+  // password at rest; see registerAndEnroll in public.controller.js and
+  // updateRegistrationStatus in registration.controller.js). Re-hashing an
+  // already-hashed value here would corrupt it, so recognize a bcrypt hash
+  // by its own format and pass it through unchanged instead. A real
+  // plaintext password (every other caller of User.create/save) never
+  // matches this pattern, so this is a no-op for them.
+  if (/^\$2[aby]\$\d{2}\$/.test(this.password)) return;
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
 });

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { CheckCheck } from 'lucide-react';
 import { PageContainer, FormField, Input, Textarea, Button } from '../../components/common';
 import attendanceApi from '../../api/attendanceApi';
@@ -17,6 +18,7 @@ export default function MultiAttendance() {
   const { can } = useAuth();
   const canMark = can('attendance', 'create');
   const campusFilter = useAdminCampusFilter();
+  const navigate = useNavigate();
 
   const [date, setDate] = useState(today());
   const [rollNumbersText, setRollNumbersText] = useState('');
@@ -59,6 +61,7 @@ export default function MultiAttendance() {
     <PageContainer
       title="Multi Attendance"
       description="Mark attendance as present for multiple roll numbers at once"
+      onBack={() => navigate(-1)}
     >
       <form onSubmit={handleSubmit} className="rounded-xl border border-slate-200 bg-white p-5">
         <FormField label="Attendance Date" htmlFor="multi-date" required>

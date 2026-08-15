@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { PageContainer } from '../../components/common';
 import RecentActivityPanel from '../../components/attendance/RecentActivityPanel';
 import AttendanceHistoryPanel from '../../components/attendance/AttendanceHistoryPanel';
@@ -13,6 +14,7 @@ export default function ViewAttendance() {
   const { can } = useAuth();
   const canDelete = can('attendance', 'delete');
   const campusFilter = useAdminCampusFilter();
+  const navigate = useNavigate();
   const [batches, setBatches] = useState([]);
 
   useEffect(() => {
@@ -21,7 +23,7 @@ export default function ViewAttendance() {
   }, []);
 
   return (
-    <PageContainer title="View Attendance" description="Review student attendance history across batches">
+    <PageContainer title="View Attendance" description="Review student attendance history across batches" onBack={() => navigate(-1)}>
       <RecentActivityPanel campusFilter={campusFilter} />
       <AttendanceHistoryPanel batches={batches} canDelete={canDelete} campusFilter={campusFilter} />
     </PageContainer>

@@ -191,7 +191,6 @@ function AssignmentCard({ assignment, onSubmitted, onView }) {
   const [files, setFiles] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [formOpen, setFormOpen] = useState(false);
 
   const { submission, expired, dueDate } = assignment;
   const deadlineLabel = formatDeadline(dueDate);
@@ -205,7 +204,6 @@ function AssignmentCard({ assignment, onSubmitted, onView }) {
       setDescription('');
       setLinks([]);
       setFiles([]);
-      setFormOpen(false);
       onSubmitted();
     } catch (err) {
       // The deadline can expire between page load and this click — the
@@ -272,28 +270,27 @@ function AssignmentCard({ assignment, onSubmitted, onView }) {
               <p className="text-sm text-slate-700">{submission.feedback}</p>
             </div>
           )}
-          {!expired && (
-            <button type="button" onClick={() => setFormOpen((p) => !p)} className="mt-2 text-xs font-medium text-primary-600 hover:underline">
-              {formOpen ? 'Cancel' : 'Resubmit'}
-            </button>
-          )}
         </div>
       )}
 
+      {/* Once a submission exists it's permanent — the student portal never
+          shows a Resubmit/Submit Again action, only the submission above
+          (and its feedback, once graded). The form below only ever renders
+          pre-submission. */}
       {!submission && expired && (
         <div className="mt-3 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
           <AlertTriangle size={15} className="shrink-0" /> Submission deadline has expired.
         </div>
       )}
 
-      {!expired && (!submission || formOpen) && (
+      {!submission && !expired && (
         <form onSubmit={handleSubmit} className="mt-3 space-y-3 border-t border-slate-100 pt-3">
           <Textarea rows={3} placeholder="Add a note (optional)…" value={description} onChange={(e) => setDescription(e.target.value)} />
           <LinkListInput values={links} onChange={setLinks} />
           <MultiFileInput label="Add files" files={files} onFilesChange={setFiles} />
           {error && <p className="text-xs text-red-600">{error}</p>}
           <Button type="submit" disabled={submitting}>
-            <Upload size={15} /> {submitting ? 'Submitting…' : submission ? 'Resubmit' : 'Submit Assignment'}
+            <Upload size={15} /> {submitting ? 'Submitting…' : 'Submit Assignment'}
           </Button>
         </form>
       )}

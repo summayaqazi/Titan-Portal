@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronLeft, ChevronRight, LogOut, X } from 'lucide-react';
-import { SUPER_ADMIN_NAV, ADMIN_NAV, TRAINER_NAV, STUDENT_NAV } from '../../constants/navigation';
+import { SUPER_ADMIN_NAV, ADMIN_NAV, TRAINER_NAV, STUDENT_NAV, APPLICANT_NAV } from '../../constants/navigation';
 import { ROLES } from '../../constants/roles';
 import { useAuth } from '../../context/AuthContext';
 import BrandLogo from '../common/BrandLogo';
@@ -28,9 +28,12 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onClo
       ? TRAINER_NAV
       : user?.role === ROLES.STUDENT
       ? STUDENT_NAV
+      : user?.role === ROLES.APPLICANT
+      ? APPLICANT_NAV
       : SUPER_ADMIN_NAV;
   const isTrainer = user?.role === ROLES.TRAINER;
   const isStudent = user?.role === ROLES.STUDENT;
+  const isApplicant = user?.role === ROLES.APPLICANT;
 
   // The student's real uploaded photo lives on the Student model
   // (`profilePicture`, set via PUT /student/me/profile — the same drawer
@@ -279,6 +282,46 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onClo
         <div className="border-t border-(--color-sidebar-border) p-3">
           <div className={`flex items-center gap-2.5 ${collapsed ? 'justify-center' : ''}`}>
             <Avatar src={resolveFileUrl(studentPicture)} name={user?.name} size={36} className="shrink-0" />
+            {!collapsed && (
+              <>
+                <p className="min-w-0 flex-1 truncate text-sm font-medium text-white">{user?.name}</p>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  title="Logout"
+                  className="shrink-0 rounded-md p-1.5 text-(--color-sidebar-text-muted) transition-colors hover:bg-(--color-sidebar-hover) hover:text-white"
+                >
+                  <LogOut size={16} />
+                </button>
+              </>
+            )}
+          </div>
+          {collapsed && (
+            <button
+              type="button"
+              onClick={handleLogout}
+              title="Logout"
+              className="mt-1.5 flex w-full items-center justify-center rounded-md p-1.5 text-(--color-sidebar-text-muted) transition-colors hover:bg-(--color-sidebar-hover) hover:text-white"
+            >
+              <LogOut size={16} />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Applicant-only: same avatar + name + Logout shape as Student's own
+          block above (APPLICANT_NAV already has its own "Profile" entry,
+          so no NavLink wrapper needed here either). No Applicant-specific
+          uploaded photo exists (Applicant.js carries no profilePicture
+          field, by design — see its own comment), so this uses the shared
+          User.avatar field like Super Admin/Admin/Trainer's Header
+          dropdown already does; Avatar's own fallback chain shows initials
+          when it's empty, never a broken image. Super Admin/Admin/Trainer/
+          Student never render this block. */}
+      {isApplicant && (
+        <div className="border-t border-(--color-sidebar-border) p-3">
+          <div className={`flex items-center gap-2.5 ${collapsed ? 'justify-center' : ''}`}>
+            <Avatar src={resolveFileUrl(user?.avatar)} name={user?.name} size={36} className="shrink-0" />
             {!collapsed && (
               <>
                 <p className="min-w-0 flex-1 truncate text-sm font-medium text-white">{user?.name}</p>

@@ -11,6 +11,11 @@ const Quiz = require('../models/Quiz');
 const QuizAttempt = require('../models/QuizAttempt');
 const Feedback = require('../models/Feedback');
 const { getCourseProgressPercent } = require('../utils/courseProgress');
+// Shared with attendance.controller.js#scanStudentAttendance (the Admin/
+// Super Admin QR scanner) — the STUDENT_QR_TYPE constant and the parsing/
+// marking logic markOwnAttendanceViaQr below delegates to, so both callers
+// stay byte-for-byte in sync rather than risk two drifting copies.
+const { parseStudentQrPayload, markStudentAttendanceFromActiveSession } = require('../utils/studentQrAttendance');
 // Reused as-is from the Trainer Portal's own progress/attendance/quiz
 // controllers (all additively exported for this purpose) so the numbers
 // shown to a student are always derived by the exact same logic already
@@ -20,10 +25,10 @@ const { withComputed } = require('./trainerProgress.controller');
 const { summarizeAttendance } = require('./attendance.controller');
 const { syncSchedule } = require('./trainerQuiz.controller');
 // Grading/availability/attempt-cap logic shared with the Trainer Portal's
-// own progress view (trainerQuiz.controller.js#getQuizProgress) — pulled
-// into its own util specifically so neither controller has to import
-// (and risk a circular require with) the other. See quizGrading.js's own
-// header comment for why.
+// own progress view (trainerQuiz.controller.js#getQuizProgress) and its
+// quiz authoring — pulled into its own util specifically so neither
+// controller has to import (and risk a circular require with) the other.
+// See quizGrading.js's own header comment for why.
 const {
   QUIZ_PASS_PERCENTAGE,
   MAX_QUIZ_ATTEMPTS,
@@ -35,6 +40,8 @@ const {
   AVAILABILITY_MESSAGES,
   canResumeAttempt,
   pickDisplayAttempt,
+  cappedAttemptsUsed,
+  visibleAttempts,
 } = require('../utils/quizGrading');
 
 // Same single-vs-array multer/FormData quirk handled the same way as
@@ -54,14 +61,6 @@ const toArray = (value) => {
 // through it. Mirrors trainerPortal.controller.js's shape/conventions.
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-// The `type` discriminator every Student ID Card QR encodes (see
-// client/src/utils/studentIdCard.js's buildQrPayload — both sides must
-// agree on this literal string). Doubles as a cheap first filter against
-// scanning anything else — a Trainer ID card (freeform text, see
-// trainerIdCard.js), a random URL, or any other QR someone might point the
-// camera at — none of which will ever parse into `{ type: STUDENT_QR_TYPE }`.
-const STUDENT_QR_TYPE = 'titan-student-id-card';
-
 // `date.toISOString()` shifts the calendar date backwards for any server
 // timezone ahead of UTC — always format from local date parts instead, same
 // fix trainerPortal.controller.js already applies.
@@ -74,28 +73,6 @@ const dayInBatchRange = (date, batch) => {
   if (batch?.startDate && day < new Date(new Date(batch.startDate).setHours(0, 0, 0, 0))) return false;
   if (batch?.endDate && day > new Date(new Date(batch.endDate).setHours(23, 59, 59, 999))) return false;
   return true;
-};
-
-// "09:00" -> 540 (minutes since midnight) — Slot.startTime/endTime's own
-// stored format (see models/Slot.js). Used only for a same-day minutes
-// comparison, never combined into a Date, so it's immune to timezone shift.
-const timeToMinutes = (hhmm) => {
-  const [h, m] = (hhmm || '').split(':').map(Number);
-  return Number.isInteger(h) && Number.isInteger(m) ? h * 60 + m : null;
-};
-
-// Is `slot`'s own class window (start/end, both "HH:MM") currently open,
-// right now, on the server's own clock? Used to gate self-attendance so a
-// student enrolled in two courses that both meet today can only ever be
-// marked present for whichever one's class is actually in session at the
-// moment they scan — never both, and never a course whose slot already
-// ended or hasn't started yet, even though its *day* still matches.
-const isSlotActiveNow = (slot, now) => {
-  const startMin = timeToMinutes(slot?.startTime);
-  const endMin = timeToMinutes(slot?.endTime);
-  if (startMin === null || endMin === null) return false;
-  const nowMin = now.getHours() * 60 + now.getMinutes();
-  return nowMin >= startMin && nowMin <= endMin;
 };
 
 // @desc    Student's own dashboard — enrollment/attendance/payment stats,
@@ -272,16 +249,23 @@ const getAssignments = asyncHandler(async (req, res) => {
   res.json({ success: true, data });
 });
 
-// @desc    Create or update (upsert — one submission per student per
-//          assignment, same as the Submission model's unique index) the
-//          caller's own submission for one assignment. Rejects with 403
-//          once the deadline has passed, checked against `new Date()` (the
-//          server's own clock) — never a client-supplied time, so this
-//          can't be bypassed by a manipulated device clock. Enrollment in
-//          the assignment's batch is verified the same way trainer routes
-//          verify batch ownership: server-side, from req.student, never
-//          trusting anything the client sends beyond the assignment id in
-//          the URL.
+// @desc    Create the caller's own submission for one assignment. One
+//          student + one assignment = one submission, permanently — once a
+//          Submission document exists for this (assignment, student) pair,
+//          this rejects with 409 rather than overwriting it (no
+//          resubmit/upsert). This is the real enforcement; the frontend
+//          hiding the form once `submission` is present is just UX — a
+//          client that calls this route directly a second time must still
+//          be refused, so duplicates can't be created by hitting the API
+//          manually either. Also enforced at the data layer by the
+//          Submission model's unique (assignment, student) index. Rejects
+//          with 403 once the deadline has passed, checked against `new
+//          Date()` (the server's own clock) — never a client-supplied time,
+//          so this can't be bypassed by a manipulated device clock.
+//          Enrollment in the assignment's batch is verified the same way
+//          trainer routes verify batch ownership: server-side, from
+//          req.student, never trusting anything the client sends beyond the
+//          assignment id in the URL.
 // @route   POST /api/student/me/assignments/:assignmentId/submit
 // @access  Private (STUDENT)
 const submitAssignment = asyncHandler(async (req, res) => {
@@ -303,26 +287,18 @@ const submitAssignment = asyncHandler(async (req, res) => {
     throw new Error('Submission deadline has expired.');
   }
 
+  const existing = await Submission.findOne({ assignment: assignment._id, student: student._id });
+  if (existing) {
+    res.status(409);
+    throw new Error('You have already submitted this assignment.');
+  }
+
   const { description } = req.body;
   const links = toArray(req.body.links);
   const newFiles = (req.files || []).map((f) => `/uploads/${f.filename}`);
 
-  let submission = await Submission.findOne({ assignment: assignment._id, student: student._id });
-  if (submission) {
-    if (description !== undefined) submission.description = description;
-    if (links !== undefined) submission.links = links;
-    if (newFiles.length) submission.files = [...submission.files, ...newFiles];
-    submission.submittedAt = new Date();
-    // A resubmission is new work — any previous review no longer applies
-    // to what's now on file, so it goes back to pending rather than
-    // keeping a stale Approved/Rejected badge and feedback on unreviewed
-    // content.
-    submission.status = 'pending';
-    submission.feedback = undefined;
-    submission.feedbackBy = undefined;
-    submission.feedbackAt = undefined;
-    await submission.save();
-  } else {
+  let submission;
+  try {
     submission = await Submission.create({
       assignment: assignment._id,
       student: student._id,
@@ -331,6 +307,17 @@ const submitAssignment = asyncHandler(async (req, res) => {
       files: newFiles,
       submittedAt: new Date(),
     });
+  } catch (err) {
+    // Race: two near-simultaneous requests both pass the findOne check
+    // above before either write lands. The unique (assignment, student)
+    // index is the actual backstop here — a duplicate-key error means a
+    // submission now exists either way, so report it the same as the
+    // pre-check above rather than a generic 500.
+    if (err?.code === 11000) {
+      res.status(409);
+      throw new Error('You have already submitted this assignment.');
+    }
+    throw err;
   }
 
   res.status(201).json({ success: true, data: submission });
@@ -438,25 +425,29 @@ const getAttendance = asyncHandler(async (req, res) => {
 //          text itself:
 //            1. The QR must parse as JSON with the expected `type` — proves
 //               it's actually a Student ID Card QR, not a Trainer one (never
-//               involved here) or an unrelated code.
+//               involved here) or an unrelated code. Shared with the Admin/
+//               Super Admin scanner via parseStudentQrPayload (see
+//               utils/studentQrAttendance.js).
 //            2. Its `studentId` must equal req.student._id — the student
 //               scanning it must be the same student the card belongs to.
 //               A student can never mark themselves present by scanning
 //               someone else's card, and can never mark someone ELSE
 //               present either (attendance is always written for
-//               req.student, never for whatever id the QR/body claims).
+//               req.student, never for whatever id the QR/body claims). The
+//               one check specific to this self-scan route (see below).
 //            3. Attendance is only marked for an enrollment whose class is
 //               actually IN SESSION right now — day-of-week + batch-date-
-//               range (dayInBatchRange + slot.days, same as getDashboard's
-//               own weekly schedule widget) AND the current time falling
-//               inside that slot's own startTime/endTime window
-//               (isSlotActiveNow). This is what stops a student enrolled in
-//               two courses that both meet today from being marked present
-//               for both at once just because it's the right day — only
-//               whichever one's class window the server clock says is open
-//               right now qualifies. Never a client-supplied batch/date/time,
-//               so a student can't backdate, pick an arbitrary course, or
-//               fake being in two places at once.
+//               range AND the current time falling inside that slot's own
+//               startTime/endTime window (both via
+//               markStudentAttendanceFromActiveSession, the same shared
+//               resolution the Admin/Super Admin scanner uses). This is what
+//               stops a student enrolled in two courses that both meet today
+//               from being marked present for both at once just because
+//               it's the right day — only whichever one's class window the
+//               server clock says is open right now qualifies. Never a
+//               client-supplied batch/date/time, so a student can't
+//               backdate, pick an arbitrary course, or fake being in two
+//               places at once.
 //            4. One Attendance document per (enrollment, date) — the
 //               model's own existing unique index. If one already exists for
 //               today (marked by anyone, any status), it is left completely
@@ -467,109 +458,23 @@ const getAttendance = asyncHandler(async (req, res) => {
 // @access  Private (STUDENT)
 const markOwnAttendanceViaQr = asyncHandler(async (req, res) => {
   const student = req.student;
-  const raw = req.body.qrPayload;
+  const parsed = parseStudentQrPayload(req.body.qrPayload);
 
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    res.status(400);
-    throw new Error('This QR code could not be read. Please scan your Student ID Card.');
-  }
-
-  if (!parsed || parsed.type !== STUDENT_QR_TYPE || !parsed.studentId) {
-    res.status(400);
-    throw new Error('This is not a valid Student ID Card QR code.');
-  }
-
+  // The one check specific to the self-scan route — meaningless for the
+  // Admin/Super Admin scanner (attendance.controller.js#scanStudentAttendance),
+  // which is deliberately scanning someone ELSE's card, so it isn't part of
+  // the shared util.
   if (String(parsed.studentId) !== String(student._id)) {
     res.status(403);
     throw new Error('This ID card does not belong to your account.');
   }
 
-  const enrollments = await Enrollment.find({ student: student._id, status: 'enrolled' })
-    .populate('course', 'name')
-    .populate('batch', 'batchCode startDate endDate')
-    .populate('slot', 'days startTime endTime');
-
-  const now = new Date();
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
-  const dayName = DAY_NAMES[now.getDay()];
-
-  const todaysEnrollments = enrollments.filter(
-    (e) => e.slot?.days?.includes(dayName) && dayInBatchRange(today, e.batch)
-  );
-  if (!todaysEnrollments.length) {
-    res.status(400);
-    throw new Error('You have no class scheduled today.');
-  }
-
-  // Narrowed further to whichever of today's classes is actually in
-  // session RIGHT NOW — the fix for a student enrolled in multiple courses
-  // that meet the same day: having a class today is not enough, its own
-  // time window must currently be open.
-  const activeNowEnrollments = todaysEnrollments.filter((e) => isSlotActiveNow(e.slot, now));
-  if (!activeNowEnrollments.length) {
-    res.status(400);
-    throw new Error('No class is currently in session for you. Attendance can only be marked during your scheduled class time.');
-  }
-  // Two of a student's own courses both being "in session" at the exact
-  // same moment would mean their slots genuinely overlap — a scheduling
-  // conflict, not a normal case. Rather than guess which one they meant
-  // (and risk marking the wrong one, or both — explicitly disallowed),
-  // fail closed and point them at whoever can fix the schedule.
-  if (activeNowEnrollments.length > 1) {
-    res.status(409);
-    throw new Error('More than one of your classes is scheduled at this exact time. Please contact your campus admin to resolve the schedule conflict.');
-  }
-
-  const records = [];
-  for (const e of activeNowEnrollments) {
-    // Atomic upsert with $setOnInsert (not $set) — if a record for
-    // {enrollment, date} already exists (marked by anyone, any status), this
-    // is a complete no-op that just returns it untouched; only a genuinely
-    // missing record gets the new 'present' fields inserted. Race-safe by
-    // construction (a rapid double-tap/duplicate request can't create two
-    // documents or corrupt an existing mark) — the same $setOnInsert/upsert
-    // shape already relied on elsewhere in this codebase (Counter.js's
-    // nextSequence), just with $setOnInsert instead of $inc since here the
-    // goal is "create once, never touch again" rather than "always increment".
-    // eslint-disable-next-line no-await-in-loop
-    const result = await Attendance.findOneAndUpdate(
-      { enrollment: e._id, date: today },
-      {
-        $setOnInsert: {
-          enrollment: e._id,
-          student: student._id,
-          batch: e.batch?._id,
-          date: today,
-          status: 'present',
-          markedBy: req.user._id,
-          remarks: 'Marked via Student ID Card QR scan',
-        },
-      },
-      // `includeResultMetadata` (not the deprecated `rawResult`) is what
-      // this Mongoose version actually needs to get the
-      // {value, lastErrorObject} wrapper back — verified directly against
-      // the live driver, since `rawResult` alone silently returned just the
-      // plain document here (no `.value`/`.lastErrorObject` at all).
-      { upsert: true, returnDocument: 'after', includeResultMetadata: true, setDefaultsOnInsert: true }
-    );
-    const doc = result.value;
-    const alreadyMarked = Boolean(result.lastErrorObject?.updatedExisting);
-    records.push({ courseName: e.course?.name, batchCode: e.batch?.batchCode, status: doc.status, alreadyMarked });
-  }
-
-  const newlyMarked = records.some((r) => !r.alreadyMarked);
-  res.json({
-    success: true,
-    data: {
-      marked: newlyMarked,
-      allAlreadyMarked: !newlyMarked,
-      records,
-    },
+  const { records, marked, allAlreadyMarked } = await markStudentAttendanceFromActiveSession(student._id, {
+    markedByUserId: req.user._id,
+    remarks: 'Marked via Student ID Card QR scan',
   });
+
+  res.json({ success: true, data: { marked, allAlreadyMarked, records } });
 });
 
 // @desc    Student's own fee/payment history — every Payment document
@@ -672,7 +577,12 @@ const getQuizzes = asyncHandler(async (req, res) => {
       const displayAttempt = pickDisplayAttempt(quizAttempts);
       const graded = quizAttempts.filter((a) => a.status !== 'in-progress');
       const bestPercentage = graded.length ? Math.max(...graded.map((a) => a.percentage)) : null;
-      const attemptsUsed = quizAttempts.length;
+      // Clamped at MAX_QUIZ_ATTEMPTS — never displays a count like "3/2"
+      // even if a stray extra attempt document exists (e.g. from before
+      // the cap was enforced). The real cap enforcement (blocking a 3rd
+      // attempt from ever being created) is entirely separate, in
+      // startQuizAttempt, and unaffected by this display-only clamp.
+      const attemptsUsed = cappedAttemptsUsed(quizAttempts.length);
       const availability = getQuizAvailability(q);
 
       return {
@@ -691,7 +601,7 @@ const getQuizzes = asyncHandler(async (req, res) => {
         maxAttempts: MAX_QUIZ_ATTEMPTS,
         attemptsUsed,
         attemptsRemaining: Math.max(0, MAX_QUIZ_ATTEMPTS - attemptsUsed),
-        attemptsCount: graded.length,
+        attemptsCount: cappedAttemptsUsed(graded.length),
         latestAttempt: displayAttempt
           ? { status: displayAttempt.status, percentage: displayAttempt.percentage, score: displayAttempt.score, attemptNumber: displayAttempt.attemptNumber }
           : null,
@@ -764,9 +674,16 @@ const getQuizInfo = asyncHandler(async (req, res) => {
       availability,
       availabilityMessage: AVAILABILITY_MESSAGES[availability],
       maxAttempts: MAX_QUIZ_ATTEMPTS,
-      attemptsUsed: attempts.length,
+      // Clamped at MAX_QUIZ_ATTEMPTS — see cappedAttemptsUsed's own comment
+      // in quizGrading.js (never displays a count like "3/2").
+      attemptsUsed: cappedAttemptsUsed(attempts.length),
       attemptsRemaining: Math.max(0, MAX_QUIZ_ATTEMPTS - attempts.length),
-      attempts: attempts.map((a) => ({
+      // Once any attempt has passed, a failed attempt is no longer shown —
+      // the pass is this quiz's qualifying result, so a failed retake (or
+      // an earlier failed attempt the student later passed past) is hidden
+      // rather than left sitting alongside it. See visibleAttempts's own
+      // comment in quizGrading.js.
+      attempts: visibleAttempts(attempts).map((a) => ({
         attemptNumber: a.attemptNumber,
         status: a.status,
         score: a.score,
@@ -1215,7 +1132,7 @@ const getMyProfile = asyncHandler(async (req, res) => {
       // The Student document's own _id — never exposed elsewhere on this
       // route before. Needed client-side to build this student's ID-card QR
       // payload (see utils/studentIdCard.js); not sensitive (it's exactly
-      // what markOwnAttendanceViaQr below expects back, and every other
+      // what markOwnAttendanceViaQr above expects back, and every other
       // Student Portal read already scopes by this same id server-side).
       studentId: student._id,
       name: user.name,
@@ -1232,6 +1149,9 @@ const getMyProfile = asyncHandler(async (req, res) => {
         enrollmentId: e._id,
         courseName: e.course?.name,
         batchCode: e.batch?.batchCode,
+        // Also added for the ID card — the badge shown under the student's
+        // photo, mirroring the Trainer card's own employeeId badge.
+        rollNumber: e.rollNumber,
         status: e.status,
         // Added for the Student ID Card's roll-number badge (see
         // utils/studentIdCard.js) — not previously exposed on this route.

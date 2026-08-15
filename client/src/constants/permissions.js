@@ -18,6 +18,10 @@ export const PERMISSION_MODULES = [
   'quizzes',
   'progress',
   'feedback',
+  // Public course-registration review queue — deliberately separate from
+  // 'students': a Registration is reviewed before any Student exists. See
+  // server/src/models/Registration.js's header comment.
+  'registrations',
 ];
 
 export const PERMISSION_ACTIONS = ['view', 'create', 'update', 'delete', 'export'];
@@ -41,4 +45,5 @@ export const MODULE_LABELS = {
   quizzes: 'Quizzes',
   progress: 'Course Progress',
   feedback: 'Feedback',
+  registrations: 'Student Registrations',
 };

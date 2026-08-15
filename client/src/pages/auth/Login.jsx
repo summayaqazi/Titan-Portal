@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Button, FormField, Input } from '../../components/common';
@@ -123,6 +123,17 @@ export default function Login() {
             {submitting ? 'Signing in…' : 'Sign in'}
           </Button>
         </form>
+
+        {/* Entry point into the new public course/enrollment flow (Courses
+            -> Course Details -> Register) for a visitor who doesn't have an
+            account yet — additive only, doesn't change anything about the
+            existing sign-in form above it. */}
+        <p className="mt-6 text-center text-sm text-slate-500">
+          New here?{' '}
+          <Link to="/courses" className="font-medium text-primary-700 hover:underline">
+            Browse courses &amp; apply
+          </Link>
+        </p>
       </div>
     </div>
   );
@@ -138,6 +149,8 @@ function defaultRouteForRole(role) {
       return '/trainer';
     case 'STUDENT':
       return '/student';
+    case 'APPLICANT':
+      return '/applicant/dashboard';
     default:
       // Other roles authenticate successfully but have no portal built yet.
       return '/unauthorized';
@@ -154,6 +167,8 @@ function rolePortalPrefix(role) {
       return '/trainer';
     case 'STUDENT':
       return '/student';
+    case 'APPLICANT':
+      return '/applicant';
     default:
       return null;
   }

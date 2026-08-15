@@ -190,6 +190,34 @@ const pickDisplayAttempt = (quizAttempts) => {
   return passed || quizAttempts[0] || null;
 };
 
+// Never show more attempts, or a higher attempt COUNT, than the real
+// MAX_QUIZ_ATTEMPTS cap — a defensive display-layer clamp against any
+// attempt documents that predate this cap being enforced (e.g. historical
+// data from before attempt limits existed). Enforcement of the cap itself
+// (rejecting a would-be 3rd attempt) is entirely separate and unaffected —
+// this only ever governs what a student is SHOWN, never what the backend
+// allows them to create.
+const cappedAttemptsUsed = (attemptCount) => Math.min(attemptCount, MAX_QUIZ_ATTEMPTS);
+
+// The attempts actually worth showing a student in their own quiz
+// info/history — once ANY attempt has passed, every failed attempt is
+// hidden: a pass is the qualifying result, so an earlier or later failed
+// retake is no longer meaningful information, just noise (same "a pass
+// always wins" spirit pickDisplayAttempt already applies to the single
+// summary result above, extended here to the full attempts list). An
+// in-progress attempt is always kept — there's an active session to show
+// regardless of past pass/fail history. Also defensively capped at
+// MAX_QUIZ_ATTEMPTS entries, same reasoning as cappedAttemptsUsed above.
+//
+// `quizAttempts` must already be sorted descending by attemptNumber (same
+// precondition pickDisplayAttempt documents) so the cap keeps the most
+// recent attempts, and relative order is preserved through the filter.
+const visibleAttempts = (quizAttempts) => {
+  const hasPassed = quizAttempts.some((a) => a.status === 'passed');
+  const filtered = hasPassed ? quizAttempts.filter((a) => a.status !== 'failed') : quizAttempts;
+  return filtered.slice(0, MAX_QUIZ_ATTEMPTS);
+};
+
 module.exports = {
   QUIZ_PASS_PERCENTAGE,
   MAX_QUIZ_ATTEMPTS,
@@ -201,4 +229,6 @@ module.exports = {
   AVAILABILITY_MESSAGES,
   canResumeAttempt,
   pickDisplayAttempt,
+  cappedAttemptsUsed,
+  visibleAttempts,
 };

@@ -18,6 +18,11 @@ const { getRoster } = require('../controllers/attendance.controller');
 // route uses, reused as-is with the trainer id force-scoped below so it can
 // never be pointed at another trainer's record.
 const { getTrainerAttendance } = require('../controllers/trainerAttendance.controller');
+// Face + Location Attendance — the one self-service WRITE this portal
+// exposes for attendance (everything above is read-only). See
+// trainerSelfAttendance.controller.js's own top comment for the full
+// verification flow/guarantees.
+const { getCurrentSessions, getFaceStatus, enrollFace, markOwnAttendance } = require('../controllers/trainerSelfAttendance.controller');
 const {
   getAssignments,
   createAssignment,
@@ -73,6 +78,10 @@ router.use(protect, authorize(ROLES.TRAINER), attachOwnTrainer);
 router.get('/me/dashboard', checkPermission('dashboard', 'view'), getDashboard);
 router.get('/me/calendar', checkPermission('dashboard', 'view'), getCalendar);
 router.put('/me/profile', checkPermission('profile', 'update'), updateMyProfile);
+// Face ID enrollment is a profile self-service action (same gate as the
+// bio/social-links/avatar updates above), not a new permission module.
+router.get('/me/face-status', checkPermission('profile', 'view'), getFaceStatus);
+router.post('/me/face-enroll', checkPermission('profile', 'update'), enrollFace);
 
 router.get('/me/courses/:batchId', checkPermission('dashboard', 'view'), requireOwnBatch, getCourseWorkspace);
 router.get('/me/courses/:batchId/students', checkPermission('students', 'view'), requireOwnBatch, getCourseStudents);
@@ -98,6 +107,14 @@ router.get(
   },
   getTrainerAttendance
 );
+
+// Face + Location Attendance — Mark Attendance. `sessions` is read-only
+// (gated on 'attendance':'view', same as the history above); the check-in
+// itself is the one self-service 'attendance':'create' write this portal
+// exposes, mirroring the exact same view/create split the Student Portal's
+// own QR self-attendance uses (see seed.js's STUDENT role comment).
+router.get('/me/attendance/sessions', checkPermission('attendance', 'view'), getCurrentSessions);
+router.post('/me/attendance/check-in', checkPermission('attendance', 'create'), markOwnAttendance);
 
 router.get('/me/courses/:batchId/assignments', checkPermission('assignments', 'view'), requireOwnBatch, getAssignments);
 router.post(

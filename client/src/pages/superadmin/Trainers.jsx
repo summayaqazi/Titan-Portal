@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Search } from 'lucide-react';
 import {
   PageContainer,
@@ -21,12 +22,15 @@ import campusesApi from '../../api/campusesApi';
 import coursesApi from '../../api/coursesApi';
 import { resolveFileUrl } from '../../utils/fileUrl';
 import { useAuth } from '../../context/AuthContext';
+import { ROLES } from '../../constants/roles';
 
 export default function Trainers() {
-  const { can } = useAuth();
+  const { user, can } = useAuth();
+  const isAdmin = user?.role === ROLES.ADMIN;
   const canCreate = can('trainers', 'create');
   const canUpdate = can('trainers', 'update');
   const canDelete = can('trainers', 'delete');
+  const navigate = useNavigate();
 
   // Undefined for every role but ADMIN — Super Admin's request/behavior is
   // byte-for-byte unchanged. When set, it always wins over this page's own
@@ -138,6 +142,7 @@ export default function Trainers() {
     <PageContainer
       title="Trainers"
       description="Manage trainer profiles and assignments"
+      onBack={isAdmin ? () => navigate(-1) : undefined}
       actions={
         canCreate && (
           <Button

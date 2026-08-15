@@ -11,6 +11,7 @@ import Unauthorized from './pages/Unauthorized';
 import SuperAdminLayout from './components/layout/SuperAdminLayout';
 import Dashboard from './pages/superadmin/Dashboard';
 import Students from './pages/superadmin/Students';
+import Registrations from './pages/superadmin/Registrations';
 import Courses from './pages/superadmin/Courses';
 import Batches from './pages/superadmin/Batches';
 import Campuses from './pages/superadmin/Campuses';
@@ -22,6 +23,8 @@ import Payments from './pages/superadmin/Payments';
 import AdminUsers from './pages/superadmin/AdminUsers';
 import RolesPermissions from './pages/superadmin/RolesPermissions';
 import Profile from './pages/superadmin/Profile';
+import Jobs from './pages/superadmin/Jobs';
+import Applications from './pages/superadmin/Applications';
 
 import MarkAttendance from './pages/admin/MarkAttendance';
 import ViewAttendance from './pages/admin/ViewAttendance';
@@ -33,6 +36,10 @@ import TrainerAttendanceRequests from './pages/admin/TrainerAttendanceRequests';
 import TrainerDashboard from './pages/trainer/Dashboard';
 import TrainerCalendar from './pages/trainer/Calendar';
 import TrainerAttendanceTab from './pages/trainer/Attendance';
+// Renamed on import (not `TrainerMarkAttendance`) to avoid colliding with
+// the existing Admin-portal page of that exact name imported above — that
+// page (Admin's manual mark/override) is untouched by this feature.
+import TrainerMarkAttendancePage from './pages/trainer/MarkAttendance';
 import TrainerProfile from './pages/trainer/Profile';
 import TrainerCourseWorkspace from './pages/trainer/CourseWorkspace';
 
@@ -45,6 +52,21 @@ import StudentCourseDetails from './pages/student/CourseDetails';
 import StudentProfile from './pages/student/Profile';
 import StudentQuiz from './pages/student/Quiz';
 import StudentTakeQuiz from './pages/student/TakeQuiz';
+
+import PublicCourses from './pages/public/Courses';
+import PublicCourseDetails from './pages/public/CourseDetails';
+import PublicRegister from './pages/public/Register';
+import PublicRegisterSuccess from './pages/public/RegisterSuccess';
+
+import PublicJobs from './pages/public/Jobs';
+import PublicJobDetails from './pages/public/JobDetails';
+import PublicJobApply from './pages/public/JobApply';
+import PublicApplicationSuccess from './pages/public/ApplicationSuccess';
+
+import ApplicantDashboard from './pages/applicant/Dashboard';
+import ApplicantApplications from './pages/applicant/Applications';
+import ApplicantApplicationDetails from './pages/applicant/ApplicationDetails';
+import ApplicantProfile from './pages/applicant/Profile';
 
 // Each Super Admin / Admin page sits behind its own RoleRoute with a
 // `module` key so permission edits made on the Roles & Permissions page are
@@ -75,6 +97,11 @@ function studentModuleRoute(module, path, element) {
   return moduleRoute(module, path, element, [ROLES.STUDENT]);
 }
 
+// Same pattern again for the Applicant Portal (Job Portal Phase 4).
+function applicantModuleRoute(module, path, element) {
+  return moduleRoute(module, path, element, [ROLES.APPLICANT]);
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -84,12 +111,43 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
 
+          {/* Public course discovery + registration flow — unauthenticated
+              on purpose, sits outside ProtectedRoute below. A brand-new
+              visitor with no account yet: Courses -> Course Details ->
+              Enroll Now -> Register -> pending Registration (no User/
+              Student exists yet) -> Super Admin/Admin review in the
+              Registrations module -> approval creates the Student -> the
+              Student Portal login they set a password for now works.
+              Nothing under ProtectedRoute is touched by these routes. */}
+          <Route path="/courses" element={<PublicCourses />} />
+          <Route path="/courses/:courseId" element={<PublicCourseDetails />} />
+          <Route path="/register" element={<PublicRegister />} />
+          <Route path="/enroll/:courseId" element={<PublicRegister />} />
+          <Route path="/register/success" element={<PublicRegisterSuccess />} />
+
+          {/* Public Job Portal — Phase 2 (listing + details) + Phase 3
+              (Apply Now -> Applicant login/registration + Application Form
+              -> success). All still unauthenticated-entry, additive sibling
+              routes — nothing above/below this block is touched. No
+              Applicant Dashboard route yet (a later phase) — JobApply.jsx
+              and ApplicationSuccess.jsx handle auth inline via AuthContext,
+              they don't need a protected route of their own. */}
+          <Route path="/jobs" element={<PublicJobs />} />
+          <Route path="/jobs/:id" element={<PublicJobDetails />} />
+          <Route path="/jobs/:id/apply" element={<PublicJobApply />} />
+          <Route path="/apply/success" element={<PublicApplicationSuccess />} />
+
           <Route element={<ProtectedRoute />}>
             <Route element={<RoleRoute allowedRoles={[ROLES.SUPER_ADMIN]} />}>
               <Route path="/super-admin" element={<SuperAdminLayout />}>
                 <Route index element={<Navigate to="dashboard" replace />} />
                 {moduleRoute('dashboard', 'dashboard', <Dashboard />)}
                 {moduleRoute('students', 'students', <Students />)}
+                {/* Deliberately its own route/component/module — a
+                    Registration is reviewed before any Student exists, see
+                    Registration.js's header comment. Never reuses Students
+                    or its route. */}
+                {moduleRoute('registrations', 'registrations', <Registrations />)}
                 {moduleRoute('courses', 'courses', <Courses />)}
                 {moduleRoute('batches', 'batches', <Batches />)}
                 {moduleRoute('campuses', 'campuses', <Campuses />)}
@@ -98,6 +156,9 @@ export default function App() {
                 {moduleRoute('trainers', 'trainers', <Trainers />)}
                 {moduleRoute('attendance', 'attendance', <Attendance />)}
                 {moduleRoute('payments', 'payments', <Payments />)}
+                {/* Job Portal Phase 5 */}
+                {moduleRoute('jobs', 'jobs', <Jobs />)}
+                {moduleRoute('applications', 'applications', <Applications />)}
                 {moduleRoute('adminUsers', 'admin-users', <AdminUsers />)}
                 {moduleRoute('rolesPermissions', 'roles-permissions', <RolesPermissions />)}
                 {moduleRoute('profile', 'profile', <Profile />)}
@@ -109,11 +170,25 @@ export default function App() {
                 <Route index element={<Navigate to="dashboard" replace />} />
                 {adminModuleRoute('dashboard', 'dashboard', <Dashboard />)}
                 {adminModuleRoute('students', 'students', <Students />)}
+                {/* Same 'registrations' permission as Super Admin — unset
+                    (false) for Admin by default in seed.js, so RoleRoute's
+                    own can(module,'view') check keeps this page
+                    unreachable until a Super Admin explicitly grants it on
+                    the Roles & Permissions page. Registered here
+                    regardless, same convention as every other
+                    Admin-reachable module route. */}
+                {adminModuleRoute('registrations', 'registrations', <Registrations />)}
                 {adminModuleRoute('attendance', 'attendance/mark', <MarkAttendance />)}
                 {adminModuleRoute('attendance', 'attendance/view', <ViewAttendance />)}
                 {adminModuleRoute('attendance', 'attendance/multi', <MultiAttendance />)}
                 {adminModuleRoute('slots', 'slots', <Slots />)}
                 {adminModuleRoute('trainers', 'trainers', <Trainers />)}
+                {/* Job Portal Phase 5 — same Jobs.jsx component as Super
+                    Admin; create/edit/publish/close/delete are restricted
+                    server-side to the jobs this Admin created (see
+                    job.controller.js's canManageJob). No Applications
+                    route for Admin — that stays Super-Admin-only. */}
+                {adminModuleRoute('jobs', 'jobs', <Jobs />)}
                 {adminModuleRoute('attendance', 'trainer-attendance/mark', <TrainerMarkAttendance />)}
                 {adminModuleRoute('attendance', 'trainer-attendance/view', <TrainerViewAttendance />)}
                 {adminModuleRoute('attendance', 'trainer-attendance/requests', <TrainerAttendanceRequests />)}
@@ -138,6 +213,7 @@ export default function App() {
                 {trainerModuleRoute('dashboard', 'calendar', <TrainerCalendar />)}
                 {trainerModuleRoute('dashboard', 'courses/:batchId', <TrainerCourseWorkspace />)}
                 {trainerModuleRoute('attendance', 'attendance', <TrainerAttendanceTab />)}
+                {trainerModuleRoute('attendance', 'attendance/mark', <TrainerMarkAttendancePage />)}
                 {trainerModuleRoute('profile', 'profile', <TrainerProfile />)}
               </Route>
             </Route>
@@ -165,6 +241,22 @@ export default function App() {
                 {studentModuleRoute('quizzes', 'quizzes', <StudentQuiz />)}
                 {studentModuleRoute('quizzes', 'quizzes/:quizId/take', <StudentTakeQuiz />)}
                 {studentModuleRoute('profile', 'profile', <StudentProfile />)}
+              </Route>
+            </Route>
+
+            {/* Applicant Portal (Job Portal Phase 4) — reuses SuperAdminLayout
+                exactly like Trainer/Student do. Read-only application
+                tracking only: Dashboard, My Applications, Application
+                Details, Profile. No job-management or application-review
+                functionality here — that's a Super Admin concern, a later
+                phase. */}
+            <Route element={<RoleRoute allowedRoles={[ROLES.APPLICANT]} />}>
+              <Route path="/applicant" element={<SuperAdminLayout />}>
+                <Route index element={<Navigate to="dashboard" replace />} />
+                {applicantModuleRoute('applications', 'dashboard', <ApplicantDashboard />)}
+                {applicantModuleRoute('applications', 'applications', <ApplicantApplications />)}
+                {applicantModuleRoute('applications', 'applications/:id', <ApplicantApplicationDetails />)}
+                {applicantModuleRoute('profile', 'profile', <ApplicantProfile />)}
               </Route>
             </Route>
           </Route>

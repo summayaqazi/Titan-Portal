@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import {
   PageContainer,
@@ -18,6 +19,7 @@ import useAdminCampusFilter from '../../hooks/useAdminCampusFilter';
 import { getErrorMessage } from '../../utils/errors';
 import slotsApi from '../../api/slotsApi';
 import { useAuth } from '../../context/AuthContext';
+import { ROLES } from '../../constants/roles';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const emptyForm = { label: '', startTime: '', endTime: '', days: [], isActive: true };
@@ -128,10 +130,12 @@ function SlotFormDrawer({ open, onClose, slot, onSubmit }) {
 }
 
 export default function Slots() {
-  const { can } = useAuth();
+  const { user, can } = useAuth();
+  const isAdmin = user?.role === ROLES.ADMIN;
   const canCreate = can('slots', 'create');
   const canUpdate = can('slots', 'update');
   const canDelete = can('slots', 'delete');
+  const navigate = useNavigate();
   // Undefined for every role but ADMIN — Super Admin's request is
   // byte-for-byte unchanged. Slots aren't owned by a campus, so this scopes
   // to the slots actually used by the selected campus's batches (see
@@ -196,6 +200,7 @@ export default function Slots() {
     <PageContainer
       title="Slots"
       description="Manage class timing slots"
+      onBack={isAdmin ? () => navigate(-1) : undefined}
       actions={
         canCreate && (
           <Button

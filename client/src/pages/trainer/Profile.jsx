@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Eye, EyeOff, Download, Link2, Globe } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Eye, EyeOff, Download, Link2, Globe, ScanFace, CheckCircle2 } from 'lucide-react';
 import { PageContainer, FormField, Input, Textarea, Button, ImageUpload, Avatar } from '../../components/common';
 import { useAuth } from '../../context/AuthContext';
 import { updateProfileRequest, changePasswordRequest } from '../../api/profileApi';
@@ -9,6 +9,7 @@ import useSubmitGuard from '../../hooks/useSubmitGuard';
 import { getErrorMessage } from '../../utils/errors';
 import { resolveFileUrl } from '../../utils/fileUrl';
 import { downloadTrainerIdCard } from '../../utils/trainerIdCard';
+import FaceCaptureModal from '../../components/trainer/FaceCaptureModal';
 
 // Name/phone/avatar and password reuse the exact same endpoints
 // (/auth/profile, /auth/password) and form shape as Super Admin/Admin's own
@@ -260,6 +261,88 @@ function ChangePasswordForm() {
   );
 }
 
+// Face ID enrollment for Trainer Face + Location Attendance — self-service,
+// own-account only (POST /trainer/me/face-enroll is scoped server-side to
+// req.trainer, see trainerSelfAttendance.controller.js), same as every
+// other field on this page. Only ever sends the 128-float descriptor
+// FaceCaptureModal extracts, never a photo. Re-enrolling simply overwrites
+// the previous reference — appearance changes over time, and there's no
+// separate approval step for it, consistent with how avatar/bio updates on
+// this same page work.
+function FaceIdCard() {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [capturing, setCapturing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+
+  const loadStatus = () => {
+    setLoading(true);
+    trainerPortalApi
+      .getFaceStatus()
+      .then(setStatus)
+      .catch((err) => setError(getErrorMessage(err, 'Failed to load Face ID status')))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(loadStatus, []);
+
+  const handleCapture = async ({ descriptor }) => {
+    setCapturing(false);
+    setSaving(true);
+    setError('');
+    setMessage('');
+    try {
+      const updated = await trainerPortalApi.enrollFace(descriptor);
+      setStatus(updated);
+      setMessage('Face ID enrolled successfully');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to enroll Face ID'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5">
+      <h2 className="mb-1 text-base font-semibold text-slate-800">Face ID</h2>
+      <p className="mb-4 text-sm text-slate-500">Used to verify it's really you when marking your own attendance.</p>
+
+      {loading ? (
+        <p className="text-sm text-slate-400">Loading…</p>
+      ) : (
+        <>
+          <div className="mb-4 flex items-center gap-2 text-sm">
+            {status?.enrolled ? (
+              <span className="flex items-center gap-1.5 text-green-600">
+                <CheckCircle2 size={15} /> Enrolled{status.enrolledAt ? ` on ${new Date(status.enrolledAt).toLocaleDateString()}` : ''}
+              </span>
+            ) : (
+              <span className="text-slate-500">Not enrolled yet — required before you can mark your own attendance.</span>
+            )}
+          </div>
+
+          {message && <p className="mb-3 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{message}</p>}
+          {error && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+
+          <Button variant="secondary" onClick={() => setCapturing(true)} disabled={saving}>
+            <ScanFace size={15} /> {saving ? 'Saving…' : status?.enrolled ? 'Re-enroll Face ID' : 'Enroll Face ID'}
+          </Button>
+        </>
+      )}
+
+      <FaceCaptureModal
+        open={capturing}
+        onClose={() => setCapturing(false)}
+        onCapture={handleCapture}
+        title="Enroll Face ID"
+        subtitle="Look at the camera and blink naturally — this becomes your reference for attendance verification."
+      />
+    </div>
+  );
+}
+
 function ProfileHeader() {
   const { user, updateUser } = useAuth();
   const trainerProfile = user?.trainerProfile;
@@ -318,6 +401,7 @@ export default function Profile() {
         <PersonalInfoForm />
         <BioAndSocialForm />
         <ChangePasswordForm />
+        <FaceIdCard />
       </div>
     </PageContainer>
   );

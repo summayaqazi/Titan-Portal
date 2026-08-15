@@ -87,6 +87,16 @@ const DEFAULT_ROLES = [
       // Updation is intentionally withheld from the Admin Portal — leave
       // unset so it falls back to `false` for every action.
       profile: { view: true, update: true },
+      // Campus Admin gets READ-ONLY job access — view only (job.controller.js
+      // additionally scopes what they can see to jobs tagged with their own
+      // assigned campus). No create/update/delete/export: job
+      // creation/editing/publishing/closing is Super-Admin-only, same as
+      // 'applications' below — a config-only change (Roles & Permissions
+      // page) to grant more later if ever needed.
+      jobs: { view: true },
+      // Application review/shortlist/approve/reject stays a Super-Admin-only
+      // action — intentionally left unset so it falls back to `false` for
+      // every action, same as 'updation' above.
     }),
   },
   {
@@ -96,10 +106,14 @@ const DEFAULT_ROLES = [
     isSystem: false,
     permissions: buildPermissions(false, {
       dashboard: { view: true },
-      // Trainer views their own roster and attendance history — marking is
-      // an Admin/Super Admin action, never a Trainer one.
+      // Trainer views their own roster and attendance history — bulk/manual
+      // marking stays an Admin/Super Admin action. create: the one
+      // self-service write — Face + Location verified attendance for their
+      // own scheduled session (see trainerSelfAttendance.controller.js).
+      // No update/delete — an already-marked record can't be changed by the
+      // trainer, only Admin/Super Admin retain that.
       students: { view: true },
-      attendance: { view: true },
+      attendance: { view: true, create: true },
       profile: { view: true, update: true },
       // Trainer fully manages their own assignments (never other trainers'
       // — enforced server-side by ownership checks, not this permission).
@@ -145,6 +159,29 @@ const DEFAULT_ROLES = [
       // UI in this phase for a student to view (create-only is enough for
       // the Send Feedback workflow).
       feedback: { create: true },
+    }),
+  },
+  {
+    // Job Portal — a job applicant's account. Distinct from STUDENT: an
+    // applicant only ever sees their own applications, never any academic
+    // (Student/Enrollment) data, and vice versa.
+    name: ROLES.APPLICANT,
+    label: 'Applicant',
+    description: 'Job applicant account. Applies for jobs and views their own application status.',
+    isSystem: false,
+    permissions: buildPermissions(false, {
+      // View/create their own applications only — enforced by ownership
+      // scoping in applicantPortal.controller.js, not by this permission
+      // grid, same convention as STUDENT's own assignments/quizzes grants
+      // above. Also gates the Applicant Dashboard and My Applications
+      // pages (Phase 4) — both are just applications views, so they reuse
+      // this module rather than a dedicated 'dashboard' grant, same
+      // reasoning TRAINER_NAV's Calendar entry already documents for
+      // reusing 'dashboard' instead of adding a module of its own.
+      applications: { view: true, create: true },
+      // Phase 4 — the read-only Applicant Profile page (Name/Email/Account
+      // status from the existing User record).
+      profile: { view: true },
     }),
   },
 ];
