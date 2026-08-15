@@ -147,10 +147,10 @@ export default function TakeQuiz() {
   }, [quizId]);
 
   // Periodic autosave — debounced so every single click doesn't fire a
-  // request, but frequent enough that a refreshed/resumed session (see
-  // above) never lags far behind what's actually been answered. Never
-  // touches grading/status — only submitQuizAttempt (on explicit Submit)
-  // does that.
+  // request, but frequent enough that a Trainer's live progress view (and a
+  // refreshed/resumed session, see above) never lags far behind what's
+  // actually been answered. Never touches grading/status — only
+  // submitQuizAttempt (on explicit Submit) does that.
   //
   // A 410 here means the server has already independently closed this
   // attempt out (the quiz's own end date/time passed, or the attempt's own

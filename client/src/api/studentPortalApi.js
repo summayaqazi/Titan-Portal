@@ -42,8 +42,8 @@ const studentPortalApi = {
   startQuiz: (quizId) => axiosInstance.post(`/student/me/quizzes/${quizId}/start`).then((res) => res.data.data),
 
   // Periodic autosave while a quiz is in progress — never grades anything,
-  // just persists answers-so-far so a resumed/refreshed session sees
-  // up-to-date state.
+  // just persists answers-so-far so a Trainer's live progress view (and a
+  // resumed/refreshed session) both see up-to-date state.
   saveQuizProgress: (attemptId, answers) =>
     axiosInstance.put(`/student/me/quiz-attempts/${attemptId}/progress`, { answers }).then((res) => res.data.data),
 

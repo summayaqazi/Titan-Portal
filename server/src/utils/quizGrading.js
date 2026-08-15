@@ -1,14 +1,14 @@
 // Shared quiz-attempt logic used by BOTH the Student Portal
 // (studentPortal.controller.js — taking a quiz) and the Trainer Portal
-// (trainerQuiz.controller.js — authoring a quiz). Pulled out to its own
-// util (rather than living in either controller and being imported by the
-// other) specifically to avoid a circular require: studentPortal.controller.js
-// already imports `syncSchedule` FROM trainerQuiz.controller.js, so anything
-// trainerQuiz.controller.js needed back from studentPortal.controller.js
-// would form a cycle. A neutral util with no controller-side dependencies
-// has none of that risk, and keeps grading/availability logic defined in
-// exactly one place for both portals to share — never two implementations
-// that could drift apart.
+// (trainerQuiz.controller.js — authoring a quiz, viewing student progress).
+// Pulled out to its own util (rather than living in either controller and
+// being imported by the other) specifically to avoid a circular require:
+// studentPortal.controller.js already imports `syncSchedule` FROM
+// trainerQuiz.controller.js, so anything trainerQuiz.controller.js needed
+// back from studentPortal.controller.js would form a cycle. A neutral util
+// with no controller-side dependencies has none of that risk, and keeps
+// grading/availability logic defined in exactly one place for both portals
+// to share — never two implementations that could drift apart.
 
 // The Quiz model has no passing-percentage or attempt-limit field (verified
 // by reading Quiz.js) — both are fixed constants here, local to grading
@@ -64,7 +64,7 @@ const gradeAttempt = (quiz, answers) => {
 };
 
 // A per-attempt deadline is startedAt + quiz.durationMinutes, same as
-// before — but also capped at the quiz's own global `endAt` (if set and
+// before — but now also capped at the quiz's own global `endAt` (if set and
 // earlier), so a student who starts near the very end of the availability
 // window can never be handed a countdown that runs past it. This is the
 // ONLY change needed to make the quiz's end date/time a hard boundary on
@@ -76,12 +76,12 @@ const gradeAttempt = (quiz, answers) => {
 // than ever producing a null deadline — createQuiz already defaults a
 // missing/zero value to 30 (`durationMinutes || 30`), but updateQuiz has no
 // such fallback (`if (durationMinutes !== undefined) quiz.durationMinutes =
-// durationMinutes`), so an explicit 0 can reach here. Without this
-// fallback, that produces an attempt with NO deadline at all, which
-// `closeExpiredAttempt` below can then never auto-close — a permanently
-// "in-progress" attempt that would keep showing Resume forever, even once
-// the student has no attempts left to fall back on. Every attempt gets a
-// real, finite deadline, full stop.
+// durationMinutes` — verified by reading it), so an explicit 0 can reach
+// here. Without this fallback, that produces an attempt with NO deadline at
+// all, which `closeExpiredAttempt` below can then never auto-close — a
+// permanently "in-progress" attempt that would keep showing Resume forever,
+// even once the student has no attempts left to fall back on. Every
+// attempt gets a real, finite deadline, full stop.
 const DEFAULT_DURATION_MINUTES = 30;
 const computeAttemptDeadline = (quiz, startedAt) => {
   const minutes = quiz.durationMinutes > 0 ? quiz.durationMinutes : DEFAULT_DURATION_MINUTES;
@@ -121,7 +121,14 @@ const getQuizAvailability = (quiz, now = new Date()) => {
 //      resume/submit/autosave/list-read, so "the quiz end date/time has
 //      passed" is enforced strictly and immediately everywhere, exactly
 //      once, from this one function.
-// No-op (returns false) otherwise.
+// Same auto-close-on-read behavior startQuizAttempt already did inline,
+// now shared so getQuizzes/getQuizInfo (student), getQuizProgress
+// (trainer), submitQuizAttempt, and saveQuizAttemptProgress all see (and
+// enforce) identically up-to-date status — never a stale "in-progress"
+// that only gets reconciled whenever the student next happens to hit
+// Start. Mirrors the exact precedent trainerQuiz.controller.js's
+// syncSchedule already sets for Quiz.status (lazy reconciliation on read,
+// no cron). No-op (returns false) otherwise.
 const closeExpiredAttempt = async (quiz, attempt) => {
   if (attempt.status !== 'in-progress') return false;
 
@@ -152,10 +159,15 @@ const AVAILABILITY_MESSAGES = {
 // for this quiz" — computed here once, server-side, and handed to the
 // frontend as an explicit flag (`canResume`) instead of the frontend
 // re-deriving it from `latestAttempt.status === 'in-progress'` on its own.
-// That inference is only correct as long as the caller has ALREADY run
-// `closeExpiredAttempt` on `latestAttempt` first — requires the caller to
-// have already called closeExpiredAttempt(quiz, latestAttempt) on this
-// exact attempt.
+// That inference used to be correct in isolation, but only as long as the
+// caller had ALREADY run `closeExpiredAttempt` on `latestAttempt` first —
+// two different read paths (getQuizzes, getQuizInfo) each doing that
+// reconciliation and then re-deriving the same boolean independently was
+// exactly the kind of drift risk (and, before computeAttemptDeadline's own
+// fix above, the zero-duration/null-deadline gap) that let a genuinely
+// finished quiz keep showing Resume. Requires the caller to have already
+// called closeExpiredAttempt(quiz, latestAttempt) on this exact attempt —
+// that's still done by getQuizzes/getQuizInfo, just once, not duplicated.
 const canResumeAttempt = (latestAttempt) => Boolean(latestAttempt && latestAttempt.status === 'in-progress');
 
 // Which attempt should represent this quiz in the student's own quiz
@@ -163,7 +175,8 @@ const canResumeAttempt = (latestAttempt) => Boolean(latestAttempt && latestAttem
 // (or still in-progress) one, so a genuine pass can never be hidden by a
 // subsequent unsuccessful retake. Falls back to the true latest attempt
 // (whatever its status, including null if never attempted) only when
-// nothing has passed yet. Deliberately independent of canResumeAttempt
+// nothing has passed yet — this is what "no attempt is passed, show the
+// latest attempt" means. Deliberately independent of canResumeAttempt
 // above: which attempt is shown as the RESULT and whether Resume is
 // offered are two separate questions — a student who passed on attempt 1
 // but has attempt 2 genuinely in progress should see "Passed" as the

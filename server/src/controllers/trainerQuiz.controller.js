@@ -1,6 +1,9 @@
 const asyncHandler = require('express-async-handler');
 const Quiz = require('../models/Quiz');
+const QuizAttempt = require('../models/QuizAttempt');
+const Enrollment = require('../models/Enrollment');
 const { parseListQuery, paginatedResponse } = require('../utils/queryHelpers');
+const { MAX_QUIZ_ATTEMPTS, closeExpiredAttempt, getQuizAvailability } = require('../utils/quizGrading');
 
 const QUESTION_TYPES = ['single', 'multiple', 'true-false'];
 
@@ -304,6 +307,109 @@ const deleteQuestion = asyncHandler(async (req, res) => {
   res.json({ success: true, data: quiz });
 });
 
+// @desc    Student-wise quiz activity for this trainer's own quiz — every
+//          student *enrolled in the quiz's batch* (via Enrollment, same
+//          roster source getCourseStudents in trainerPortal.controller.js
+//          already uses — never a direct Course-on-Student lookup), left-
+//          joined with their own QuizAttempts for this quiz so a student who
+//          hasn't attempted at all still appears (with an empty attempts
+//          list) rather than being silently omitted. Ownership of the quiz
+//          itself is already guaranteed by requireOwnQuiz (route
+//          middleware) before this ever runs, so a trainer can only ever
+//          reach their own quiz here, and — because the roster is derived
+//          from that quiz's own batch — only ever their own students'
+//          progress, never another trainer's.
+// @route   GET /api/trainer/me/quizzes/:quizId/progress
+// @access  Private (TRAINER)
+const getQuizProgress = asyncHandler(async (req, res) => {
+  const quiz = await syncSchedule(req.quiz);
+  await quiz.populate('course', 'name');
+  await quiz.populate('batch', 'batchCode');
+
+  const enrollments = await Enrollment.find({ batch: quiz.batch._id, status: 'enrolled' })
+    .populate({ path: 'student', populate: { path: 'user', select: 'name email' } })
+    .sort({ rollNumber: 1 });
+
+  const attempts = await QuizAttempt.find({
+    quiz: quiz._id,
+    student: { $in: enrollments.map((e) => e.student?._id).filter(Boolean) },
+  }).sort({ attemptNumber: 1 });
+
+  // Reconcile any attempt whose own deadline has quietly passed since it was
+  // last read — same lazy-close-on-read pattern getQuizzes/getQuizInfo use
+  // on the student side, so a trainer never sees a stale "in-progress" for
+  // a session that's actually long over.
+  await Promise.all(attempts.map((a) => closeExpiredAttempt(quiz, a)));
+
+  const attemptsByStudent = new Map();
+  attempts.forEach((a) => {
+    const key = String(a.student);
+    if (!attemptsByStudent.has(key)) attemptsByStudent.set(key, []);
+    attemptsByStudent.get(key).push(a);
+  });
+
+  const totalQuestions = quiz.questions.length;
+  const students = enrollments
+    .filter((e) => e.student)
+    .map((e) => {
+      const studentAttempts = attemptsByStudent.get(String(e.student._id)) || [];
+      const attemptsUsed = studentAttempts.length;
+      const latest = studentAttempts[studentAttempts.length - 1] || null;
+      const overallStatus = !latest ? 'not-started' : latest.status === 'in-progress' ? 'in-progress' : 'completed';
+
+      return {
+        studentId: e.student._id,
+        name: e.student.user?.name,
+        email: e.student.user?.email,
+        // Same field the Trainer Portal's own Students Tab already reads
+        // this from (Student.profilePicture, not User.avatar — see
+        // getCourseStudents's comment in trainerPortal.controller.js).
+        profilePicture: e.student.profilePicture,
+        rollNumber: e.rollNumber,
+        attemptsUsed,
+        attemptsRemaining: Math.max(0, MAX_QUIZ_ATTEMPTS - attemptsUsed),
+        overallStatus,
+        attempts: studentAttempts.map((a) => {
+          const answeredCount = a.answers.filter((ans) => ans.selectedOptions?.length).length;
+          return {
+            attemptId: a._id,
+            attemptNumber: a.attemptNumber,
+            status: a.status,
+            startedAt: a.startedAt,
+            submittedAt: a.submittedAt,
+            deadline: a.deadline,
+            late: a.late,
+            answeredCount,
+            totalQuestions,
+            progressPercent: totalQuestions ? Math.round((answeredCount / totalQuestions) * 100) : 0,
+            score: a.status === 'in-progress' ? null : a.score,
+            totalMarks: a.totalMarks || quiz.totalMarks,
+            percentage: a.status === 'in-progress' ? null : a.percentage,
+          };
+        }),
+      };
+    });
+
+  res.json({
+    success: true,
+    data: {
+      quiz: {
+        _id: quiz._id,
+        title: quiz.title,
+        courseName: quiz.course?.name,
+        batchCode: quiz.batch?.batchCode,
+        totalQuestions,
+        totalMarks: quiz.totalMarks,
+        maxAttempts: MAX_QUIZ_ATTEMPTS,
+        availability: getQuizAvailability(quiz),
+        startAt: quiz.startAt,
+        endAt: quiz.endAt,
+      },
+      students,
+    },
+  });
+});
+
 module.exports = {
   getQuizzes,
   getQuiz,
@@ -316,6 +422,7 @@ module.exports = {
   addQuestion,
   updateQuestion,
   deleteQuestion,
+  getQuizProgress,
   // Exported so studentPortal.controller.js can lazily flip an overdue
   // 'scheduled' quiz to 'published' the same way the Trainer Portal already
   // does, instead of a second implementation that could drift from this

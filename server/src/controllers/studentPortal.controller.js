@@ -24,11 +24,11 @@ const { parseStudentQrPayload, markStudentAttendanceFromActiveSession } = requir
 const { withComputed } = require('./trainerProgress.controller');
 const { summarizeAttendance } = require('./attendance.controller');
 const { syncSchedule } = require('./trainerQuiz.controller');
-// Grading/availability/attempt-cap logic shared with the Trainer Portal
-// (trainerQuiz.controller.js's own quiz authoring) — pulled into its own
-// util specifically so neither controller has to import (and risk a
-// circular require with) the other. See quizGrading.js's own header
-// comment for why.
+// Grading/availability/attempt-cap logic shared with the Trainer Portal's
+// own progress view (trainerQuiz.controller.js#getQuizProgress) and its
+// quiz authoring — pulled into its own util specifically so neither
+// controller has to import (and risk a circular require with) the other.
+// See quizGrading.js's own header comment for why.
 const {
   QUIZ_PASS_PERCENTAGE,
   MAX_QUIZ_ATTEMPTS,
@@ -73,28 +73,6 @@ const dayInBatchRange = (date, batch) => {
   if (batch?.startDate && day < new Date(new Date(batch.startDate).setHours(0, 0, 0, 0))) return false;
   if (batch?.endDate && day > new Date(new Date(batch.endDate).setHours(23, 59, 59, 999))) return false;
   return true;
-};
-
-// "09:00" -> 540 (minutes since midnight) — Slot.startTime/endTime's own
-// stored format (see models/Slot.js). Used only for a same-day minutes
-// comparison, never combined into a Date, so it's immune to timezone shift.
-const timeToMinutes = (hhmm) => {
-  const [h, m] = (hhmm || '').split(':').map(Number);
-  return Number.isInteger(h) && Number.isInteger(m) ? h * 60 + m : null;
-};
-
-// Is `slot`'s own class window (start/end, both "HH:MM") currently open,
-// right now, on the server's own clock? Used to gate self-attendance so a
-// student enrolled in two courses that both meet today can only ever be
-// marked present for whichever one's class is actually in session at the
-// moment they scan — never both, and never a course whose slot already
-// ended or hasn't started yet, even though its *day* still matches.
-const isSlotActiveNow = (slot, now) => {
-  const startMin = timeToMinutes(slot?.startTime);
-  const endMin = timeToMinutes(slot?.endTime);
-  if (startMin === null || endMin === null) return false;
-  const nowMin = now.getHours() * 60 + now.getMinutes();
-  return nowMin >= startMin && nowMin <= endMin;
 };
 
 // @desc    Student's own dashboard — enrollment/attendance/payment stats,
@@ -447,25 +425,29 @@ const getAttendance = asyncHandler(async (req, res) => {
 //          text itself:
 //            1. The QR must parse as JSON with the expected `type` — proves
 //               it's actually a Student ID Card QR, not a Trainer one (never
-//               involved here) or an unrelated code.
+//               involved here) or an unrelated code. Shared with the Admin/
+//               Super Admin scanner via parseStudentQrPayload (see
+//               utils/studentQrAttendance.js).
 //            2. Its `studentId` must equal req.student._id — the student
 //               scanning it must be the same student the card belongs to.
 //               A student can never mark themselves present by scanning
 //               someone else's card, and can never mark someone ELSE
 //               present either (attendance is always written for
-//               req.student, never for whatever id the QR/body claims).
+//               req.student, never for whatever id the QR/body claims). The
+//               one check specific to this self-scan route (see below).
 //            3. Attendance is only marked for an enrollment whose class is
 //               actually IN SESSION right now — day-of-week + batch-date-
-//               range (dayInBatchRange + slot.days, same as getDashboard's
-//               own weekly schedule widget) AND the current time falling
-//               inside that slot's own startTime/endTime window
-//               (isSlotActiveNow). This is what stops a student enrolled in
-//               two courses that both meet today from being marked present
-//               for both at once just because it's the right day — only
-//               whichever one's class window the server clock says is open
-//               right now qualifies. Never a client-supplied batch/date/time,
-//               so a student can't backdate, pick an arbitrary course, or
-//               fake being in two places at once.
+//               range AND the current time falling inside that slot's own
+//               startTime/endTime window (both via
+//               markStudentAttendanceFromActiveSession, the same shared
+//               resolution the Admin/Super Admin scanner uses). This is what
+//               stops a student enrolled in two courses that both meet today
+//               from being marked present for both at once just because
+//               it's the right day — only whichever one's class window the
+//               server clock says is open right now qualifies. Never a
+//               client-supplied batch/date/time, so a student can't
+//               backdate, pick an arbitrary course, or fake being in two
+//               places at once.
 //            4. One Attendance document per (enrollment, date) — the
 //               model's own existing unique index. If one already exists for
 //               today (marked by anyone, any status), it is left completely
@@ -858,8 +840,12 @@ const startQuizAttempt = asyncHandler(async (req, res) => {
 // @desc    Autosave the caller's own in-progress attempt's answers so far —
 //          called periodically while a student is taking the quiz, NOT a
 //          grading action (status/score/percentage are never touched here,
-//          only submitQuizAttempt computes those). Same ownership/expiry
-//          guards as submitQuizAttempt.
+//          only submitQuizAttempt computes those). This is what makes a
+//          Trainer's live "Progress: 60%, Answered: 6/10" view (see
+//          trainerQuiz.controller.js#getQuizProgress) possible at all —
+//          without it, answers would exist only in the student's browser
+//          until final submit and a trainer could never see in-flight
+//          progress. Same ownership/expiry guards as submitQuizAttempt.
 // @route   PUT /api/student/me/quiz-attempts/:attemptId/progress
 // @access  Private (STUDENT)
 const saveQuizAttemptProgress = asyncHandler(async (req, res) => {
@@ -921,10 +907,10 @@ const saveQuizAttemptProgress = asyncHandler(async (req, res) => {
 //          closed out using whatever was last autosaved (see
 //          saveQuizAttemptProgress) — NOT the answers in this now-too-late
 //          request — and the submission itself is rejected. This is a hard
-//          stop: once expired, no further answers or submissions are ever
-//          accepted for this attempt, enforced here on the server
-//          regardless of what the client's own countdown timer did or
-//          didn't catch.
+//          stop, not the old "accept it anyway and just flag late": once
+//          expired, no further answers or submissions are ever accepted for
+//          this attempt, enforced here on the server regardless of what the
+//          client's own countdown timer did or didn't catch.
 // @route   POST /api/student/me/quiz-attempts/:attemptId/submit
 // @access  Private (STUDENT)
 const submitQuizAttempt = asyncHandler(async (req, res) => {
@@ -1143,11 +1129,11 @@ const getMyProfile = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data: {
-      // The Student document's own _id — distinct from user.id (the User
-      // account). Added for the ID card (downloadStudentIdCard in
-      // utils/studentIdCard.js), which needs a stable identifier for its QR
-      // payload; additive only, nothing existing read this response shape
-      // expecting exactly the prior field set.
+      // The Student document's own _id — never exposed elsewhere on this
+      // route before. Needed client-side to build this student's ID-card QR
+      // payload (see utils/studentIdCard.js); not sensitive (it's exactly
+      // what markOwnAttendanceViaQr above expects back, and every other
+      // Student Portal read already scopes by this same id server-side).
       studentId: student._id,
       name: user.name,
       email: user.email,
@@ -1167,6 +1153,9 @@ const getMyProfile = asyncHandler(async (req, res) => {
         // photo, mirroring the Trainer card's own employeeId badge.
         rollNumber: e.rollNumber,
         status: e.status,
+        // Added for the Student ID Card's roll-number badge (see
+        // utils/studentIdCard.js) — not previously exposed on this route.
+        rollNumber: e.rollNumber,
       })),
     },
   });

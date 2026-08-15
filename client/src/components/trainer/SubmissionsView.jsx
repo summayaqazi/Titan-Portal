@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Search, FileText, Link2, Check, X as XIcon, Users, CheckCircle2, Clock, XCircle, AlarmClockOff, Trash2, Download } from 'lucide-react';
+import { ArrowLeft, Search, FileText, Link2, Check, X as XIcon, Users, CheckCircle2, Clock, XCircle, AlarmClockOff, Trash2, Download, MessageSquare } from 'lucide-react';
 import { Input, Button, Avatar, StatusBadge, EmptyState, Modal, Textarea, FormField, StatPill, ConfirmDialog } from '../common';
 import trainerAssignmentsApi from '../../api/trainerAssignmentsApi';
 import { getErrorMessage } from '../../utils/errors';
@@ -292,19 +292,15 @@ export default function SubmissionsView({ assignment, onBack }) {
                 </div>
               )}
 
+              {/* Approve/Reject only apply to a submission still awaiting
+                  review — once it's Approved, the status badge above
+                  already says so, so the actions here shrink to just
+                  editing feedback and deleting. Gated on live `status`
+                  (not a one-time flag), so if the submission's status is
+                  ever moved back to "pending" the review buttons return
+                  automatically. */}
               <div className="flex gap-2 border-t border-slate-100 pt-4">
-                {/* Approve/Reject only ever show on a still-pending
-                    submission — once reviewed, Delete is the only action
-                    left, per spec. Checked against `selected.status`, the
-                    real persisted value from the last load()/re-fetch, never
-                    a separate local flag that could drift from it. Side
-                    effect: FeedbackModal's "edit existing feedback" mode
-                    (see its own isEdit/initialFeedback handling) is no
-                    longer reachable for an already-reviewed submission,
-                    since Approve/Reject were its only entry point — no
-                    replacement entry point was requested, so none was
-                    added here. */}
-                {selected.status === 'pending' && (
+                {selected.status !== 'approved' && (
                   <>
                     <Button onClick={() => setModalAction('approved')}>
                       <Check size={15} /> Approve
@@ -313,6 +309,11 @@ export default function SubmissionsView({ assignment, onBack }) {
                       <XIcon size={15} /> Reject
                     </Button>
                   </>
+                )}
+                {selected.status === 'approved' && (
+                  <Button variant="secondary" onClick={() => setModalAction('approved')}>
+                    <MessageSquare size={15} /> Feedback
+                  </Button>
                 )}
                 <Button variant="danger" onClick={() => setDeleteTarget(selected)}>
                   <Trash2 size={15} /> Delete

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Plus, CheckCircle2, CalendarClock, RotateCcw, X } from 'lucide-react';
+import { ArrowLeft, Plus, CheckCircle2, CalendarClock, RotateCcw, X, ListChecks, BarChart3 } from 'lucide-react';
 import { Button, StatusBadge, EmptyState, Modal, FormField, Input, Select, Textarea, RowActions, ConfirmDialog } from '../common';
 import useSubmitGuard from '../../hooks/useSubmitGuard';
 import trainerQuizzesApi from '../../api/trainerQuizzesApi';
 import { getErrorMessage } from '../../utils/errors';
+import QuizProgressView from './QuizProgressView';
 
 const TYPE_LABELS = { single: 'Single choice', multiple: 'Multiple choice', 'true-false': 'True / False' };
 const emptyQuestionForm = { text: '', type: 'single', options: ['', ''], correctOptions: [], points: 1 };
@@ -221,6 +222,7 @@ export default function QuestionsManager({ quizId, onBack }) {
   const [deleting, setDeleting] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
+  const [tab, setTab] = useState('questions'); // 'questions' | 'progress'
 
   const load = () => {
     setLoading(true);
@@ -294,6 +296,13 @@ export default function QuestionsManager({ quizId, onBack }) {
               {quiz.status === 'scheduled' && quiz.scheduledAt && ` · Live at ${new Date(quiz.scheduledAt).toLocaleString()}`}
               {quiz.status === 'published' && quiz.publishedAt && ` · Published ${new Date(quiz.publishedAt).toLocaleString()}`}
             </p>
+            {(quiz.startAt || quiz.endAt) && (
+              <p className="mt-0.5 text-xs text-slate-400">
+                {quiz.startAt && `Opens ${new Date(quiz.startAt).toLocaleString()}`}
+                {quiz.startAt && quiz.endAt && ' · '}
+                {quiz.endAt && `Closes ${new Date(quiz.endAt).toLocaleString()}`}
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             {quiz.status !== 'published' && (
@@ -316,57 +325,87 @@ export default function QuestionsManager({ quizId, onBack }) {
         {actionError && <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{actionError}</p>}
       </div>
 
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-700">Questions</h3>
-        <Button
-          onClick={() => {
-            setEditingQuestion(null);
-            setFormOpen(true);
-          }}
+      {/* Questions / Progress — same tab-switcher shape used nowhere else
+          yet in this codebase, kept intentionally minimal (two buttons, no
+          new shared component) since this is the only place it's needed. */}
+      <div className="mb-4 flex gap-1 rounded-lg border border-slate-200 bg-white p-1 sm:inline-flex">
+        <button
+          type="button"
+          onClick={() => setTab('questions')}
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium sm:flex-none ${
+            tab === 'questions' ? 'bg-primary-50 text-primary-700' : 'text-slate-500 hover:bg-slate-50'
+          }`}
         >
-          <Plus size={15} /> Add Question
-        </Button>
+          <ListChecks size={14} /> Questions
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('progress')}
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium sm:flex-none ${
+            tab === 'progress' ? 'bg-primary-50 text-primary-700' : 'text-slate-500 hover:bg-slate-50'
+          }`}
+        >
+          <BarChart3 size={14} /> Student Progress
+        </button>
       </div>
 
-      {quiz.questions.length === 0 ? (
-        <div className="rounded-lg border border-slate-200 bg-white">
-          <EmptyState title="No questions yet" description="Add at least one question before publishing or scheduling this quiz." />
-        </div>
+      {tab === 'progress' ? (
+        <QuizProgressView quizId={quizId} />
       ) : (
-        <div className="space-y-3">
-          {quiz.questions.map((q, i) => (
-            <div key={q._id} className="rounded-lg border border-slate-200 bg-white p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-slate-800">
-                    {i + 1}. {q.text}
-                  </p>
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    {TYPE_LABELS[q.type]} · {q.points} point{q.points === 1 ? '' : 's'}
-                  </p>
-                  <ul className="mt-2 space-y-1">
-                    {q.options.map((opt, idx) => (
-                      <li
-                        key={idx}
-                        className={`text-sm ${q.correctOptions.includes(idx) ? 'font-medium text-green-700' : 'text-slate-600'}`}
-                      >
-                        {q.correctOptions.includes(idx) ? '✓ ' : '· '}
-                        {opt}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <RowActions
-                  onEdit={() => {
-                    setEditingQuestion(q);
-                    setFormOpen(true);
-                  }}
-                  onDelete={() => setDeleteTarget(q)}
-                />
-              </div>
+        <>
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-700">Questions</h3>
+            <Button
+              onClick={() => {
+                setEditingQuestion(null);
+                setFormOpen(true);
+              }}
+            >
+              <Plus size={15} /> Add Question
+            </Button>
+          </div>
+
+          {quiz.questions.length === 0 ? (
+            <div className="rounded-lg border border-slate-200 bg-white">
+              <EmptyState title="No questions yet" description="Add at least one question before publishing or scheduling this quiz." />
             </div>
-          ))}
-        </div>
+          ) : (
+            <div className="space-y-3">
+              {quiz.questions.map((q, i) => (
+                <div key={q._id} className="rounded-lg border border-slate-200 bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-800">
+                        {i + 1}. {q.text}
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-400">
+                        {TYPE_LABELS[q.type]} · {q.points} point{q.points === 1 ? '' : 's'}
+                      </p>
+                      <ul className="mt-2 space-y-1">
+                        {q.options.map((opt, idx) => (
+                          <li
+                            key={idx}
+                            className={`text-sm ${q.correctOptions.includes(idx) ? 'font-medium text-green-700' : 'text-slate-600'}`}
+                          >
+                            {q.correctOptions.includes(idx) ? '✓ ' : '· '}
+                            {opt}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <RowActions
+                      onEdit={() => {
+                        setEditingQuestion(q);
+                        setFormOpen(true);
+                      }}
+                      onDelete={() => setDeleteTarget(q)}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       <QuestionFormModal open={formOpen} onClose={() => setFormOpen(false)} question={editingQuestion} onSubmit={handleSaveQuestion} />

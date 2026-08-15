@@ -30,6 +30,51 @@ const addMonths = (date, months) => {
 
 const currentMonthLabel = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 
+// Root-cause fix for Super Admin/Campus Admin showing different payment
+// statuses for the same student: Enrollment.paymentStatus previously had NO
+// write path that ever reflected a Payment record's status — it was only
+// ever set once at enrollment creation (enrollment.controller.js#createEnrollment)
+// and otherwise sat frozen, while every real "mark this Paid/Pending" action
+// happens here, on individual Payment documents. Two independently-updated
+// fields for "is this student paid" is exactly the duplicate-state bug —
+// Super Admin and Campus Admin already read the SAME Enrollment.paymentStatus
+// (Students.jsx/StudentDetailDrawer/RollNumberLookup are literally the same
+// shared components/routes for both roles — verified, not assumed), so the
+// fix is to make that one field always correct, not to add a second display
+// path. Called after every Payment create/update/delete below so it can
+// never drift again. Always linked by `enrollment` (an ObjectId ref), never
+// by student name/email.
+//
+// A student's aggregate status across every fee owed on this enrollment
+// (registration + monthly + installments):
+//   - no Payment rows yet -> 'pending' (nothing owed has been recorded)
+//   - any row 'overdue'   -> 'overdue' (most urgent, takes priority)
+//   - every row 'paid'    -> 'paid'
+//   - some (not all) paid -> 'partial'
+//   - otherwise           -> 'pending'
+// 'waived' is the one manual-only state (an Admin explicitly exempting this
+// enrollment via enrollment.controller.js#updateEnrollment) — deliberately
+// never auto-overridden here, so marking an enrollment waived stays sticky
+// regardless of what payment records exist or change later.
+const syncEnrollmentPaymentStatus = async (enrollmentId) => {
+  if (!enrollmentId) return;
+  const enrollment = await Enrollment.findById(enrollmentId).select('paymentStatus');
+  if (!enrollment || enrollment.paymentStatus === 'waived') return;
+
+  const payments = await Payment.find({ enrollment: enrollmentId }).select('status');
+
+  let computed;
+  if (!payments.length) computed = 'pending';
+  else if (payments.some((p) => p.status === 'overdue')) computed = 'overdue';
+  else if (payments.every((p) => p.status === 'paid')) computed = 'paid';
+  else if (payments.some((p) => p.status === 'paid')) computed = 'partial';
+  else computed = 'pending';
+
+  if (computed !== enrollment.paymentStatus) {
+    await Enrollment.findByIdAndUpdate(enrollmentId, { paymentStatus: computed });
+  }
+};
+
 const getPayments = asyncHandler(async (req, res) => {
   const { page, limit, skip, search } = parseListQuery(req);
 
@@ -105,6 +150,7 @@ const createPayment = asyncHandler(async (req, res) => {
     month: resolvedMonth,
     invoiceNumber: await generateInvoiceNumber(),
   });
+  await syncEnrollmentPaymentStatus(enrollment);
 
   res.status(201).json({ success: true, data: await payment.populate(POPULATE) });
 });
@@ -139,6 +185,7 @@ const updatePayment = asyncHandler(async (req, res) => {
   if (paidDate !== undefined) payment.paidDate = paidDate;
 
   await payment.save();
+  await syncEnrollmentPaymentStatus(payment.enrollment);
   res.json({ success: true, data: await payment.populate(POPULATE) });
 });
 
@@ -148,7 +195,9 @@ const deletePayment = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error('Payment not found');
   }
+  const { enrollment } = payment;
   await payment.deleteOne();
+  await syncEnrollmentPaymentStatus(enrollment);
   res.json({ success: true, message: 'Payment deleted' });
 });
 
@@ -201,6 +250,7 @@ const generatePlan = asyncHandler(async (req, res) => {
     });
     created.push(payment);
   }
+  await syncEnrollmentPaymentStatus(enrollment);
 
   const populated = await Payment.find({ _id: { $in: created.map((p) => p._id) } }).populate(POPULATE);
   res.status(201).json({ success: true, data: populated });
@@ -270,6 +320,7 @@ const regeneratePayment = asyncHandler(async (req, res) => {
     month: nextMonth,
     invoiceNumber: await generateInvoiceNumber(),
   });
+  await syncEnrollmentPaymentStatus(payment.enrollment);
 
   res.status(201).json({ success: true, data: await created.populate(POPULATE) });
 });
@@ -287,4 +338,9 @@ module.exports = {
   // so invoice numbering stays the exact same logic, not a second implementation.
   generateInvoiceNumber,
   currentMonthLabel,
+  // Exposed so utils/syncAllEnrollmentPaymentStatuses.js (a one-off backfill
+  // for enrollments left stale by this bug before the fix existed) reuses
+  // the exact same aggregation rule — never a second, possibly-drifting
+  // implementation of "what does this enrollment's payment status mean".
+  syncEnrollmentPaymentStatus,
 };

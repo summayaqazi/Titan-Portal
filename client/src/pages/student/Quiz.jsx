@@ -169,10 +169,15 @@ export default function Quiz() {
   // `row.canResume` is the server's own explicit, already-reconciled
   // verdict (see canResumeAttempt in quizGrading.js) — trusted as-is here
   // instead of this component re-deriving "is it resumable" from
-  // `row.status === 'in-progress'` on its own. Real enforcement is still
-  // server-side regardless of what this renders — a student who bypasses
-  // this button entirely (e.g. hitting the API directly) still gets the
-  // exact same block from startQuizAttempt.
+  // `row.status === 'in-progress'` on its own. That inference used to be
+  // wrong whenever the latest attempt was actually done/expired but the
+  // read that would have reconciled it hadn't happened yet (or, before
+  // computeAttemptDeadline's own fix, a zero-duration quiz whose attempt
+  // could never expire at all) — trusting one server-computed flag removes
+  // that whole class of drift. Real enforcement is still server-side
+  // regardless of what this renders — a student who bypasses this button
+  // entirely (e.g. hitting the API directly) still gets the exact same
+  // block from startQuizAttempt.
   const actionFor = (row) => {
     if (row.canResume) {
       return (
