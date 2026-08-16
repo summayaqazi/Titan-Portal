@@ -1,156 +1,43 @@
-import { useEffect, useRef, useState } from 'react';
-import jsQR from 'jsqr';
+import { useEffect, useRef } from 'react';
 import { Camera, CheckCircle2, XCircle, RotateCcw } from 'lucide-react';
 import { Modal, Button } from '../common';
 import studentPortalApi from '../../api/studentPortalApi';
-import { getErrorMessage } from '../../utils/errors';
-
-// How long an inline error stays up before the scan loop automatically
-// resumes — long enough to read ("This ID card does not belong to your
-// account."), short enough that a student pointing the camera back at
-// their OWN card isn't stuck waiting.
-const ERROR_COOLDOWN_MS = 2500;
+import useQrCodeScanner from '../../hooks/useQrCodeScanner';
 
 // Camera-driven QR scanner for the Student Portal's own "Scan QR"
-// attendance flow. Decoding happens entirely client-side (jsQR against
-// video frames drawn to a hidden canvas) — the decoded text is only ever
-// sent to the server for the actual verification (see
-// studentPortalApi.scanAttendance / markOwnAttendanceViaQr), never trusted
-// or acted on here. No Trainer QR is ever involved — this only ever calls
-// the student's own /me/attendance/scan endpoint.
+// attendance flow. The actual camera/canvas/jsQR scan-loop mechanics live
+// in hooks/useQrCodeScanner.js (shared with the Admin/Super Admin QR
+// scanner, components/attendance/AttendanceQrScannerModal.jsx) — this
+// component is now just that hook wired to studentPortalApi.scanAttendance
+// plus this flow's own copy/rendering. Decoded text is only ever sent to
+// the server for the actual verification, never trusted or acted on here.
+// No Trainer QR is ever involved — this only ever calls the student's own
+// /me/attendance/scan endpoint.
 export default function QrAttendanceScanner({ open, onClose, onSuccess }) {
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const streamRef = useRef(null);
-  const rafRef = useRef(null);
-  const busyRef = useRef(false); // true while a decoded code is being verified, or during the post-error cooldown
-  const cooldownTimeoutRef = useRef(null);
+  const { videoRef, canvasRef, phase, error, result, retryCamera, stop } = useQrCodeScanner({
+    open,
+    onDecode: (qrText) => studentPortalApi.scanAttendance(qrText),
+    cameraErrorMessage: 'Camera access is required to scan your ID card. Please allow camera permission and try again.',
+  });
 
-  const [phase, setPhase] = useState('starting'); // starting | scanning | verifying | success | camera-error
-  const [error, setError] = useState('');
-  const [successRecords, setSuccessRecords] = useState(null);
-
-  const stopCamera = () => {
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-  };
-
-  const scanFrame = () => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas || video.readyState !== video.HAVE_ENOUGH_DATA) {
-      rafRef.current = requestAnimationFrame(scanFrame);
-      return;
-    }
-
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const code = jsQR(imageData.data, imageData.width, imageData.height);
-
-    if (code?.data && !busyRef.current) {
-      handleDecoded(code.data);
-      return; // handleDecoded drives the next step (verify, then resume or stop)
-    }
-
-    rafRef.current = requestAnimationFrame(scanFrame);
-  };
-
-  const handleDecoded = async (qrText) => {
-    busyRef.current = true;
-    setPhase('verifying');
-    setError('');
-    try {
-      const data = await studentPortalApi.scanAttendance(qrText);
-      // Verified — stop the camera now, per spec ("Stop the camera after
-      // successful verification"), and surface what was actually marked.
-      stopCamera();
-      setSuccessRecords(data.records || []);
-      setPhase('success');
-      onSuccess?.(data);
-    } catch (err) {
-      setError(getErrorMessage(err, 'Could not verify this QR code.'));
-      setPhase('scanning');
-      // Cooldown before resuming the scan loop — long enough to read the
-      // error, short enough to retry quickly with the right card. Camera
-      // stays on throughout (only a successful scan stops it).
-      cooldownTimeoutRef.current = setTimeout(() => {
-        busyRef.current = false;
-        setError('');
-        rafRef.current = requestAnimationFrame(scanFrame);
-      }, ERROR_COOLDOWN_MS);
-    }
-  };
-
+  // Fire onSuccess exactly once per successful scan, the moment `phase`
+  // actually transitions to 'success' — same timing the original inline
+  // handleDecoded had (called right alongside setting the success state),
+  // not re-fired on every re-render while still on the success screen.
+  const notifiedRef = useRef(false);
   useEffect(() => {
-    if (!open) return undefined;
-
-    let cancelled = false;
-    setPhase('starting');
-    setError('');
-    setSuccessRecords(null);
-    busyRef.current = false;
-
-    navigator.mediaDevices
-      ?.getUserMedia({ video: { facingMode: 'environment' } })
-      .then((stream) => {
-        if (cancelled) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => {});
-        }
-        setPhase('scanning');
-        rafRef.current = requestAnimationFrame(scanFrame);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setPhase('camera-error');
-          setError('Camera access is required to scan your ID card. Please allow camera permission and try again.');
-        }
-      });
-
-    return () => {
-      cancelled = true;
-      stopCamera();
-      if (cooldownTimeoutRef.current) clearTimeout(cooldownTimeoutRef.current);
-    };
+    if (phase === 'success' && !notifiedRef.current) {
+      notifiedRef.current = true;
+      onSuccess?.(result);
+    }
+    if (phase !== 'success') notifiedRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [phase]);
 
-  const retryCamera = () => {
-    setPhase('starting');
-    setError('');
-    navigator.mediaDevices
-      ?.getUserMedia({ video: { facingMode: 'environment' } })
-      .then((stream) => {
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => {});
-        }
-        setPhase('scanning');
-        rafRef.current = requestAnimationFrame(scanFrame);
-      })
-      .catch(() => {
-        setPhase('camera-error');
-        setError('Camera access is required to scan your ID card. Please allow camera permission and try again.');
-      });
-  };
+  const successRecords = result?.records || null;
 
   const handleClose = () => {
-    stopCamera();
+    stop();
     onClose();
   };
 

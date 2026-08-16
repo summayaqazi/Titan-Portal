@@ -11,6 +11,11 @@ const Quiz = require('../models/Quiz');
 const QuizAttempt = require('../models/QuizAttempt');
 const Feedback = require('../models/Feedback');
 const { getCourseProgressPercent } = require('../utils/courseProgress');
+// Shared with attendance.controller.js#scanStudentAttendance (the Admin/
+// Super Admin QR scanner) — the STUDENT_QR_TYPE constant and the parsing/
+// marking logic markOwnAttendanceViaQr below delegates to, so both callers
+// stay byte-for-byte in sync rather than risk two drifting copies.
+const { parseStudentQrPayload, markStudentAttendanceFromActiveSession } = require('../utils/studentQrAttendance');
 // Reused as-is from the Trainer Portal's own progress/attendance/quiz
 // controllers (all additively exported for this purpose) so the numbers
 // shown to a student are always derived by the exact same logic already
@@ -69,14 +74,6 @@ const dayInBatchRange = (date, batch) => {
   if (batch?.endDate && day > new Date(new Date(batch.endDate).setHours(23, 59, 59, 999))) return false;
   return true;
 };
-
-// The `type` discriminator every Student ID Card QR encodes (see
-// client/src/utils/studentIdCard.js's buildQrPayload — both sides must
-// agree on this literal string). Doubles as a cheap first filter against
-// scanning anything else — a Trainer ID card (freeform text, see
-// trainerIdCard.js), a random URL, or any other QR someone might point the
-// camera at — none of which will ever parse into `{ type: STUDENT_QR_TYPE }`.
-const STUDENT_QR_TYPE = 'titan-student-id-card';
 
 // "09:00" -> 540 (minutes since midnight) — Slot.startTime/endTime's own
 // stored format (see models/Slot.js). Used only for a same-day minutes
@@ -479,109 +476,23 @@ const getAttendance = asyncHandler(async (req, res) => {
 // @access  Private (STUDENT)
 const markOwnAttendanceViaQr = asyncHandler(async (req, res) => {
   const student = req.student;
-  const raw = req.body.qrPayload;
+  const parsed = parseStudentQrPayload(req.body.qrPayload);
 
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    res.status(400);
-    throw new Error('This QR code could not be read. Please scan your Student ID Card.');
-  }
-
-  if (!parsed || parsed.type !== STUDENT_QR_TYPE || !parsed.studentId) {
-    res.status(400);
-    throw new Error('This is not a valid Student ID Card QR code.');
-  }
-
+  // The one check specific to the self-scan route — meaningless for the
+  // Admin/Super Admin scanner (attendance.controller.js#scanStudentAttendance),
+  // which is deliberately scanning someone ELSE's card, so it isn't part of
+  // the shared util.
   if (String(parsed.studentId) !== String(student._id)) {
     res.status(403);
     throw new Error('This ID card does not belong to your account.');
   }
 
-  const enrollments = await Enrollment.find({ student: student._id, status: 'enrolled' })
-    .populate('course', 'name')
-    .populate('batch', 'batchCode startDate endDate')
-    .populate('slot', 'days startTime endTime');
-
-  const now = new Date();
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
-  const dayName = DAY_NAMES[now.getDay()];
-
-  const todaysEnrollments = enrollments.filter(
-    (e) => e.slot?.days?.includes(dayName) && dayInBatchRange(today, e.batch)
-  );
-  if (!todaysEnrollments.length) {
-    res.status(400);
-    throw new Error('You have no class scheduled today.');
-  }
-
-  // Narrowed further to whichever of today's classes is actually in
-  // session RIGHT NOW — the fix for a student enrolled in multiple courses
-  // that meet the same day: having a class today is not enough, its own
-  // time window must currently be open.
-  const activeNowEnrollments = todaysEnrollments.filter((e) => isSlotActiveNow(e.slot, now));
-  if (!activeNowEnrollments.length) {
-    res.status(400);
-    throw new Error('No class is currently in session for you. Attendance can only be marked during your scheduled class time.');
-  }
-  // Two of a student's own courses both being "in session" at the exact
-  // same moment would mean their slots genuinely overlap — a scheduling
-  // conflict, not a normal case. Rather than guess which one they meant
-  // (and risk marking the wrong one, or both — explicitly disallowed),
-  // fail closed and point them at whoever can fix the schedule.
-  if (activeNowEnrollments.length > 1) {
-    res.status(409);
-    throw new Error('More than one of your classes is scheduled at this exact time. Please contact your campus admin to resolve the schedule conflict.');
-  }
-
-  const records = [];
-  for (const e of activeNowEnrollments) {
-    // Atomic upsert with $setOnInsert (not $set) — if a record for
-    // {enrollment, date} already exists (marked by anyone, any status), this
-    // is a complete no-op that just returns it untouched; only a genuinely
-    // missing record gets the new 'present' fields inserted. Race-safe by
-    // construction (a rapid double-tap/duplicate request can't create two
-    // documents or corrupt an existing mark) — the same $setOnInsert/upsert
-    // shape already relied on elsewhere in this codebase (Counter.js's
-    // nextSequence), just with $setOnInsert instead of $inc since here the
-    // goal is "create once, never touch again" rather than "always increment".
-    // eslint-disable-next-line no-await-in-loop
-    const result = await Attendance.findOneAndUpdate(
-      { enrollment: e._id, date: today },
-      {
-        $setOnInsert: {
-          enrollment: e._id,
-          student: student._id,
-          batch: e.batch?._id,
-          date: today,
-          status: 'present',
-          markedBy: req.user._id,
-          remarks: 'Marked via Student ID Card QR scan',
-        },
-      },
-      // `includeResultMetadata` (not the deprecated `rawResult`) is what
-      // this Mongoose version actually needs to get the
-      // {value, lastErrorObject} wrapper back — verified directly against
-      // the live driver, since `rawResult` alone silently returned just the
-      // plain document here (no `.value`/`.lastErrorObject` at all).
-      { upsert: true, returnDocument: 'after', includeResultMetadata: true, setDefaultsOnInsert: true }
-    );
-    const doc = result.value;
-    const alreadyMarked = Boolean(result.lastErrorObject?.updatedExisting);
-    records.push({ courseName: e.course?.name, batchCode: e.batch?.batchCode, status: doc.status, alreadyMarked });
-  }
-
-  const newlyMarked = records.some((r) => !r.alreadyMarked);
-  res.json({
-    success: true,
-    data: {
-      marked: newlyMarked,
-      allAlreadyMarked: !newlyMarked,
-      records,
-    },
+  const { records, marked, allAlreadyMarked } = await markStudentAttendanceFromActiveSession(student._id, {
+    markedByUserId: req.user._id,
+    remarks: 'Marked via Student ID Card QR scan',
   });
+
+  res.json({ success: true, data: { marked, allAlreadyMarked, records } });
 });
 
 // @desc    Student's own fee/payment history — every Payment document

@@ -77,6 +77,13 @@ export const ADMIN_NAV = [
   // own can(module,'view') filter) until an Admin's role is explicitly
   // granted it on the Roles & Permissions page; unset (false) by default.
   { label: 'Student Registrations', path: '/admin/registrations', icon: ClipboardList, module: 'registrations' },
+  // Single "Attendance" group covering both Student and Trainer attendance
+  // — the Trainer sub-items (Mark/View/Request) used to live under their
+  // own separate top-level "Trainer Attendance" group; that group is gone
+  // (sidebar ordering requirement: only one "Attendance" entry) and its 3
+  // links now live here instead, relabeled ("... Trainer Attendance") so
+  // they don't collide with the Student ones' identical names in the same
+  // dropdown. Same routes/pages/permissions as before — moved, not removed.
   {
     label: 'Attendance',
     icon: CalendarCheck,
@@ -84,6 +91,9 @@ export const ADMIN_NAV = [
       { label: 'Mark Attendance', path: '/admin/attendance/mark', module: 'attendance' },
       { label: 'View Attendance', path: '/admin/attendance/view', module: 'attendance' },
       { label: 'Multi Attendance', path: '/admin/attendance/multi', module: 'attendance' },
+      { label: 'Mark Trainer Attendance', path: '/admin/trainer-attendance/mark', module: 'attendance' },
+      { label: 'View Trainer Attendance', path: '/admin/trainer-attendance/view', module: 'attendance' },
+      { label: 'Trainer Attendance Requests', path: '/admin/trainer-attendance/requests', module: 'attendance' },
     ],
   },
   {
@@ -98,15 +108,6 @@ export const ADMIN_NAV = [
   // Super-Admin-only this phase (Admin's 'applications' permission grant
   // is empty, so that page would just 403 for them).
   { label: 'Jobs', path: '/admin/jobs', icon: Briefcase, module: 'jobs' },
-  {
-    label: 'Trainer Attendance',
-    icon: ClipboardList,
-    children: [
-      { label: 'Mark Attendance', path: '/admin/trainer-attendance/mark', module: 'attendance' },
-      { label: 'View Attendance', path: '/admin/trainer-attendance/view', module: 'attendance' },
-      { label: 'Attendance Request', path: '/admin/trainer-attendance/requests', module: 'attendance' },
-    ],
-  },
   { label: 'Profile', path: '/admin/profile', icon: UserCircle, module: 'profile' },
 ];
 
@@ -116,10 +117,22 @@ export const ADMIN_NAV = [
 // like Dashboard itself, rather than adding a new permission module for it.
 // No Profile entry here — the sidebar's bottom profile card is the entry
 // point into /trainer/profile instead (see Sidebar.jsx).
+// Attendance is a group (mirroring ADMIN_NAV's own Attendance group shape)
+// as of the Face + Location Attendance feature — "Mark Attendance" is the
+// new self-service Face+Location+Schedule verified check-in; "My
+// Attendance" is the pre-existing read-only history page, same
+// path/component as before, untouched.
 export const TRAINER_NAV = [
   { label: 'Dashboard', path: '/trainer/dashboard', icon: LayoutDashboard, module: 'dashboard' },
   { label: 'Calendar', path: '/trainer/calendar', icon: Calendar, module: 'dashboard' },
-  { label: 'Attendance', path: '/trainer/attendance', icon: CalendarCheck, module: 'attendance' },
+  {
+    label: 'Attendance',
+    icon: CalendarCheck,
+    children: [
+      { label: 'Mark Attendance', path: '/trainer/attendance/mark', module: 'attendance' },
+      { label: 'My Attendance', path: '/trainer/attendance', module: 'attendance' },
+    ],
+  },
 ];
 
 // Student Portal — Phase 1 (Dashboard) is done; Assignments (view + submit,

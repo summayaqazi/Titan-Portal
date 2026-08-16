@@ -24,6 +24,32 @@ const trainerAttendanceSchema = new mongoose.Schema(
 
     markedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     remarks: { type: String, trim: true },
+
+    // Optional — only ever set by the Trainer Portal's own self-check-in
+    // (trainerSelfAttendance.controller.js) or the QR scanner below. Left
+    // undefined for every record created via the existing Admin/Super Admin
+    // manual checkIn above, which is untouched by this feature.
+    campus: { type: mongoose.Schema.Types.ObjectId, ref: 'Campus' },
+    verification: {
+      // 'self-verified': created by markOwnAttendance (face + location +
+      // schedule all passed server-side). 'qr-scan': created by Admin/Super
+      // Admin scanning the trainer's own ID Card QR (see
+      // utils/trainerQrAttendance.js) — an admin-witnessed identity check,
+      // not a biometric one. 'manual': everything else, including every
+      // record that existed before this feature shipped.
+      method: { type: String, enum: ['self-verified', 'qr-scan', 'manual'], default: 'manual' },
+      face: {
+        matched: { type: Boolean },
+        distance: { type: Number },
+        livenessPassed: { type: Boolean },
+      },
+      location: {
+        matched: { type: Boolean },
+        distanceMeters: { type: Number },
+        lat: { type: Number },
+        lng: { type: Number },
+      },
+    },
   },
   { timestamps: true }
 );

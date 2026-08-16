@@ -106,10 +106,14 @@ const DEFAULT_ROLES = [
     isSystem: false,
     permissions: buildPermissions(false, {
       dashboard: { view: true },
-      // Trainer views their own roster and attendance history — marking is
-      // an Admin/Super Admin action, never a Trainer one.
+      // Trainer views their own roster and attendance history — bulk/manual
+      // marking stays an Admin/Super Admin action. create: the one
+      // self-service write — Face + Location verified attendance for their
+      // own scheduled session (see trainerSelfAttendance.controller.js).
+      // No update/delete — an already-marked record can't be changed by the
+      // trainer, only Admin/Super Admin retain that.
       students: { view: true },
-      attendance: { view: true },
+      attendance: { view: true, create: true },
       profile: { view: true, update: true },
       // Trainer fully manages their own assignments (never other trainers'
       // — enforced server-side by ownership checks, not this permission).

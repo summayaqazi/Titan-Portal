@@ -300,17 +300,25 @@ export default function Profile() {
         <p className="text-sm text-slate-400">Loading…</p>
       ) : (
         <>
-          {/* Header — a plain gradient band stands in for a cover image
-              (no cover-photo field exists anywhere in the data model, so
-              nothing is fetched/faked for it — it's pure decorative
-              chrome, same category as a card's border or background).
+          {/* Header — a plain navy band (the same --color-sidebar used by
+              the Admin/Super Admin/Trainer portal's own navbar) stands in
+              for a cover image (no cover-photo field exists anywhere in
+              the data model, so nothing is fetched/faked for it — it's
+              pure decorative chrome, same category as a card's border or
+              background).
               Name sits above the role badge (not beside it) so the two
               never compete for the same line; avatar stays beside that
-              stacked text block, its bottom edge overlapping the banner.
-              The whole avatar+text group is then centered as a unit
+              stacked text block, its bottom edge overlapping the banner —
+              and, per the same overlap, the name itself sits ON the navy
+              band (confirmed by rendering it), so it's white rather than
+              the dark slate used everywhere else on this page; the role
+              badge and email below it clear the band and stay on the
+              white card body, so they're untouched (StatusBadge's own
+              opaque pill background is self-contained regardless either
+              way). The whole avatar+text group is then centered as a unit
               against the Edit Profile button. */}
           <div className="mb-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="h-24 bg-gradient-to-r from-blue-500 to-blue-600 sm:h-28" />
+            <div className="h-24 bg-(--color-sidebar) sm:h-28" />
             <div className="flex flex-col gap-4 px-5 pb-5 sm:flex-row sm:items-center sm:justify-between">
               <div className="-mt-10 flex items-end gap-4">
                 <Avatar
@@ -320,7 +328,7 @@ export default function Profile() {
                   className="border-4 border-white shadow-sm"
                 />
                 <div className="min-w-0 pb-1">
-                  <h1 className="truncate text-xl font-bold text-slate-800 sm:text-2xl">{profile.name}</h1>
+                  <h1 className="truncate text-xl font-bold text-white sm:text-2xl">{profile.name}</h1>
                   <div className="mt-1.5">
                     <StatusBadge status="student" />
                   </div>

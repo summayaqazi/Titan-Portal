@@ -5,13 +5,17 @@ const Trainer = require('../models/Trainer');
 const { parseListQuery, paginatedResponse } = require('../utils/queryHelpers');
 const { scopeBatchFilterToCampus, requireAdminCampusScope } = require('../utils/campusScope');
 const { ROLES } = require('../utils/constants');
-
-// The check-in window is [scheduled start - 15min, scheduled end + 15min] —
-// opens 15 minutes early, auto-closes 15 minutes after the class ends.
-// Outside that window a normal check-in is rejected; a trainer is marked
-// Late the moment check-in happens after the scheduled start (no separate
-// tolerance beyond the window itself).
-const CHECK_IN_WINDOW_MINUTES = 15;
+// Window/lateness logic lives in trainerCheckInWindow.js — shared with the
+// Trainer Portal's own self-check-in (trainerSelfAttendance.controller.js)
+// so both compute "is this check-in on time" identically. Pure extraction,
+// no behavior change here.
+const { getCheckInWindow, getLateness } = require('../utils/trainerCheckInWindow');
+// Same QR parsing + schedule-resolution + check-in logic the Trainer
+// Portal's own self-check-in uses under the hood — see
+// utils/trainerQrAttendance.js's own header comment. scanTrainerAttendance
+// below is the only other caller; it exists so Admin/Super Admin can scan
+// a trainer's ID card instead of the trainer checking in themselves.
+const { parseTrainerQrPayload, checkInTrainerFromActiveSession } = require('../utils/trainerQrAttendance');
 
 const POPULATE = [
   { path: 'trainer', populate: { path: 'user', select: 'name email avatar' } },
@@ -19,17 +23,6 @@ const POPULATE = [
   { path: 'markedBy', select: 'name' },
   { path: 'verifiedBy', select: 'name' },
 ];
-
-// Combines the attendance `date` with a slot's "HH:MM" startTime into a
-// concrete Date, so a check-in can be compared against when the session was
-// actually supposed to start.
-const combineDateAndTime = (date, hhmm) => {
-  if (!hhmm) return null;
-  const [hours, minutes] = hhmm.split(':').map(Number);
-  const combined = new Date(date);
-  combined.setHours(hours, minutes, 0, 0);
-  return combined;
-};
 
 const getTrainerAttendance = asyncHandler(async (req, res) => {
   const { page, limit, skip } = parseListQuery(req);
@@ -108,17 +101,9 @@ const checkIn = asyncHandler(async (req, res) => {
   }
 
   const checkInDate = new Date(checkInTime);
-  const expectedStart = batchDoc.slot ? combineDateAndTime(date, batchDoc.slot.startTime) : null;
-  const expectedEnd = batchDoc.slot ? combineDateAndTime(date, batchDoc.slot.endTime) : null;
-
   // No slot on this batch -> no window can be derived, so (same as before)
   // nothing is time-gated and nothing is ever marked late.
-  let withinWindow = true;
-  if (expectedStart) {
-    const windowOpen = new Date(expectedStart.getTime() - CHECK_IN_WINDOW_MINUTES * 60000);
-    const windowClose = expectedEnd ? new Date(expectedEnd.getTime() + CHECK_IN_WINDOW_MINUTES * 60000) : null;
-    withinWindow = checkInDate >= windowOpen && (!windowClose || checkInDate <= windowClose);
-  }
+  const { withinWindow, expectedStart } = getCheckInWindow(batchDoc.slot, date, checkInDate);
 
   const isSuperAdmin = req.user.role === ROLES.SUPER_ADMIN;
   const existing = await TrainerAttendance.findOne({ trainer, batch, date: new Date(date) });
@@ -139,16 +124,7 @@ const checkIn = asyncHandler(async (req, res) => {
   // override — always Present. Otherwise (inside the window, no existing
   // record) lateness is computed normally, same as any other check-in.
   const isOverride = isSuperAdmin && (!withinWindow || Boolean(existing));
-
-  let isLate = false;
-  let lateMinutes = 0;
-  if (expectedStart && !isOverride) {
-    const diffMinutes = Math.round((checkInDate - expectedStart) / 60000);
-    if (diffMinutes > 0) {
-      isLate = true;
-      lateMinutes = diffMinutes;
-    }
-  }
+  const { isLate, lateMinutes } = getLateness(expectedStart, checkInDate, isOverride);
 
   const fields = {
     checkInTime: checkInDate,
@@ -157,6 +133,14 @@ const checkIn = asyncHandler(async (req, res) => {
     lateMinutes,
     markedBy: req.user._id,
     remarks,
+    // Always 'manual' here — this whole controller is the Admin/Super Admin
+    // manual mark/override path, never the Trainer Portal's own self-check-in
+    // (see trainerSelfAttendance.controller.js, the only place 'method:
+    // self-verified' is ever set). Explicit so a SUPER_ADMIN overriding an
+    // existing self-verified record doesn't leave its old Face/Location
+    // verification result stale and misleadingly still attached to what is
+    // now a manual entry.
+    verification: { method: 'manual' },
   };
 
   let record;
@@ -263,10 +247,47 @@ const deleteTrainerAttendance = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Attendance record deleted' });
 });
 
+// @desc    Admin/Super Admin QR attendance scanner (Trainer). Identifies the
+//          trainer from their scanned Trainer ID Card QR — never a
+//          client-supplied trainer id — and checks them in through the
+//          exact same rules the Trainer Portal's own self-check-in uses
+//          (see utils/trainerQrAttendance.js): whichever batch is actually
+//          in session right now, same 15-minute check-in window, same
+//          duplicate-day rejection. The one difference: campus scope. For
+//          ADMIN, requireAdminCampusScope always applies (a real selection,
+//          or a sentinel matching nothing) — scanning a trainer whose
+//          in-session class is at a different campus is rejected as
+//          unauthorized. SUPER_ADMIN is unrestricted, same as every other
+//          endpoint in this file. Unlike `checkIn` above, this never
+//          overrides an existing record or the time window — a QR scan is
+//          a live "they're here right now" action, not a manual correction.
+// @route   POST /api/trainer-attendance/scan
+const scanTrainerAttendance = asyncHandler(async (req, res) => {
+  const parsed = parseTrainerQrPayload(req.body.qrPayload);
+
+  const trainer = await Trainer.findById(parsed.trainerId).populate('user', 'name');
+  if (!trainer) {
+    res.status(404);
+    throw new Error('No trainer found for this ID card.');
+  }
+
+  const campusScope = requireAdminCampusScope(req);
+  const result = await checkInTrainerFromActiveSession(trainer._id, {
+    campusScope,
+    markedByUserId: req.user._id,
+  });
+
+  res.status(201).json({
+    success: true,
+    data: { trainerName: trainer.user?.name, ...result },
+  });
+});
+
 module.exports = {
   getTrainerAttendance,
   checkIn,
   checkOut,
   verifyAttendance,
   deleteTrainerAttendance,
+  scanTrainerAttendance,
 };

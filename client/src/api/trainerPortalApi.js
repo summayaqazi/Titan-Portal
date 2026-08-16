@@ -29,6 +29,15 @@ const trainerPortalApi = {
   // The trainer's own check-in/check-out history — always their own record,
   // scoped server-side (see trainerPortal.routes.js).
   getAttendanceHistory: (params) => axiosInstance.get('/trainer/me/attendance-history', { params }).then((res) => res.data),
+
+  // Face Attendance — Mark Attendance. See trainerSelfAttendance.controller.js
+  // for the full server-side flow. No location/geofence data is collected or
+  // sent — a trainer is not required to be physically inside the campus.
+  getCurrentSessions: () => axiosInstance.get('/trainer/me/attendance/sessions').then((res) => res.data.data),
+  getFaceStatus: () => axiosInstance.get('/trainer/me/face-status').then((res) => res.data.data),
+  enrollFace: (descriptor) => axiosInstance.post('/trainer/me/face-enroll', { descriptor }).then((res) => res.data.data),
+  checkInWithVerification: ({ descriptor, liveness }) =>
+    axiosInstance.post('/trainer/me/attendance/check-in', { descriptor, liveness }).then((res) => res.data.data),
 };
 
 export default trainerPortalApi;

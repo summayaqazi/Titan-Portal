@@ -36,6 +36,10 @@ import TrainerAttendanceRequests from './pages/admin/TrainerAttendanceRequests';
 import TrainerDashboard from './pages/trainer/Dashboard';
 import TrainerCalendar from './pages/trainer/Calendar';
 import TrainerAttendanceTab from './pages/trainer/Attendance';
+// Renamed on import (not `TrainerMarkAttendance`) to avoid colliding with
+// the existing Admin-portal page of that exact name imported above — that
+// page (Admin's manual mark/override) is untouched by this feature.
+import TrainerMarkAttendancePage from './pages/trainer/MarkAttendance';
 import TrainerProfile from './pages/trainer/Profile';
 import TrainerCourseWorkspace from './pages/trainer/CourseWorkspace';
 
@@ -209,6 +213,7 @@ export default function App() {
                 {trainerModuleRoute('dashboard', 'calendar', <TrainerCalendar />)}
                 {trainerModuleRoute('dashboard', 'courses/:batchId', <TrainerCourseWorkspace />)}
                 {trainerModuleRoute('attendance', 'attendance', <TrainerAttendanceTab />)}
+                {trainerModuleRoute('attendance', 'attendance/mark', <TrainerMarkAttendancePage />)}
                 {trainerModuleRoute('profile', 'profile', <TrainerProfile />)}
               </Route>
             </Route>
