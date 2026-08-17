@@ -12,8 +12,15 @@ import {
   Minimize,
 } from 'lucide-react';
 import { PageContainer, Button, ConfirmDialog } from '../../components/common';
+import QuizCelebration from '../../components/student/QuizCelebration';
 import studentPortalApi from '../../api/studentPortalApi';
 import { getErrorMessage } from '../../utils/errors';
+
+// Threshold for the "good score" congratulations celebration — display
+// only, doesn't touch the server's own pass/fail grading (QUIZ_PASS_PERCENTAGE
+// in quizGrading.js, currently 50%) at all. Deliberately higher than the
+// bare pass mark so the celebration means "did great", not just "passed".
+const CELEBRATION_PERCENTAGE_THRESHOLD = 80;
 
 function formatRemaining(ms) {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -111,6 +118,7 @@ export default function TakeQuiz() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
+  const [showCelebration, setShowCelebration] = useState(false);
   const submittedRef = useRef(false);
 
   useEffect(() => {
@@ -196,6 +204,11 @@ export default function TakeQuiz() {
         const data = await studentPortalApi.submitQuizAttempt(attempt.attemptId, payload);
         setResult(data);
         setState('result');
+        // Purely a display trigger — reads the already-computed result, never
+        // recomputes or alters scoring/status.
+        if (data.status === 'passed' && data.percentage >= CELEBRATION_PERCENTAGE_THRESHOLD) {
+          setShowCelebration(true);
+        }
       } catch (err) {
         submittedRef.current = false;
         const message = getErrorMessage(err, auto ? 'Time expired, but the automatic submission failed. Please try submitting again.' : 'Failed to submit quiz');
@@ -297,6 +310,11 @@ export default function TakeQuiz() {
     return (
       <PageContainer title="Quiz Result">
         <ResultView result={result} quizTitle={attempt.quiz.title} onBack={() => navigate('/student/quizzes')} />
+        <QuizCelebration
+          show={showCelebration}
+          onDismiss={() => setShowCelebration(false)}
+          percentage={result.percentage}
+        />
       </PageContainer>
     );
   }
