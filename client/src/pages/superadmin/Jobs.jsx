@@ -186,7 +186,15 @@ function JobFormDrawer({ open, onClose, job, onSubmit, campuses, readOnly = fals
         {readOnly ? (
           <FormField label="Job Image">
             {job?.image ? (
-              <img src={resolveFileUrl(job.image)} alt="" className="h-24 w-24 rounded-md border border-slate-200 object-cover" />
+              <img
+                src={resolveFileUrl(job.image)}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                width={96}
+                height={96}
+                className="h-24 w-24 rounded-md border border-slate-200 object-cover"
+              />
             ) : (
               <p className="text-sm text-slate-400">No image</p>
             )}

@@ -245,6 +245,10 @@ export default function Students() {
             <img
               src={resolveFileUrl(row.profilePicture)}
               alt={row.user?.name}
+              loading="lazy"
+              decoding="async"
+              width={32}
+              height={32}
               className="h-8 w-8 shrink-0 rounded-full border border-slate-200 object-cover"
             />
           ) : (

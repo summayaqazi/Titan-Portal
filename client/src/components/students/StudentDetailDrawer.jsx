@@ -173,6 +173,10 @@ export default function StudentDetailDrawer({ open, onClose, student, batches, o
           <img
             src={resolveFileUrl(studentData.profilePicture)}
             alt={studentData.user?.name}
+            loading="lazy"
+            decoding="async"
+            width={64}
+            height={64}
             className="h-16 w-16 rounded-full border border-slate-200 object-cover"
           />
         ) : (

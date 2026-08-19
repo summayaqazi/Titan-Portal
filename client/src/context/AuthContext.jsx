@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { loginRequest, getMeRequest } from '../api/authApi';
 
 const AuthContext = createContext(null);
@@ -43,41 +43,49 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const login = async (email, password) => {
+  // Stable function identities (useCallback) feeding a memoized context
+  // value below — without this, every AuthProvider render (which happens
+  // on any of its own state changes) would hand every consumer — Sidebar,
+  // Header, every RoleRoute, every page's own can() checks — a brand-new
+  // `{ user, loading, ... }` object even when nothing they actually read
+  // changed, forcing all of them to re-render for no reason. Behavior is
+  // unchanged either way; this only avoids redundant re-renders.
+  const login = useCallback(async (email, password) => {
     const data = await loginRequest(email, password);
     localStorage.setItem('token', data.token);
     localStorage.setItem('user', JSON.stringify(data.user));
     setUser(data.user);
     return data.user;
-  };
+  }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     // Admin Portal Dashboard's remembered campus selection — must not
     // survive into a different account logging in on the same browser.
     localStorage.removeItem('admin_dashboard_campus');
     setUser(null);
-  };
+  }, []);
 
-  const updateUser = (updates) => {
+  const updateUser = useCallback((updates) => {
     setUser((prev) => {
       const next = { ...prev, ...updates };
       localStorage.setItem('user', JSON.stringify(next));
       return next;
     });
-  };
+  }, []);
 
   // Permission check: module/action against the resolved permission map from
   // login/getMe. Falls back to false (deny) when permissions haven't loaded
   // yet or the module/action is unknown.
-  const can = (module, action) => Boolean(user?.permissions?.[module]?.[action]);
+  const can = useCallback((module, action) => Boolean(user?.permissions?.[module]?.[action]), [user]);
 
-  return (
-    <AuthContext.Provider value={{ user, loading, login, logout, updateUser, can }}>
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({ user, loading, login, logout, updateUser, can }),
+    [user, loading, login, logout, updateUser, can]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {

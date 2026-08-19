@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronLeft, ChevronRight, LogOut, X } from 'lucide-react';
 import { SUPER_ADMIN_NAV, ADMIN_NAV, TRAINER_NAV, STUDENT_NAV, APPLICANT_NAV } from '../../constants/navigation';
@@ -13,7 +13,13 @@ function isChildActive(item, pathname) {
   return item.children?.some((child) => pathname.startsWith(child.path));
 }
 
-export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onCloseMobile }) {
+// Wrapped in memo (see export at bottom) — SuperAdminLayout re-renders on
+// every route change (useLocation), and with stable handler props from
+// there (useCallback) this now actually skips re-rendering the sidebar
+// chrome on navigations where collapsed/mobileOpen/user/permissions didn't
+// change, instead of redoing the nav-visibility work on every single page
+// switch. No behavior change — same props, same render output.
+function Sidebar({ collapsed, onToggle, mobileOpen = false, onCloseMobile }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, can, logout } = useAuth();
@@ -230,6 +236,9 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onClo
                 <img
                   src={resolveFileUrl(user.avatar)}
                   alt={user.name}
+                  decoding="async"
+                  width={36}
+                  height={36}
                   className="h-9 w-9 shrink-0 rounded-full border border-(--color-sidebar-border) object-cover"
                 />
               ) : (
@@ -365,3 +374,5 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen = false, onClo
     </>
   );
 }
+
+export default memo(Sidebar);

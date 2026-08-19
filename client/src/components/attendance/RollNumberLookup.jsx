@@ -60,6 +60,10 @@ export default function RollNumberLookup({ campusFilter }) {
               <img
                 src={resolveFileUrl(result.student.profilePicture)}
                 alt=""
+                loading="lazy"
+                decoding="async"
+                width={48}
+                height={48}
                 className="h-12 w-12 rounded-full border border-slate-200 object-cover"
               />
             ) : (

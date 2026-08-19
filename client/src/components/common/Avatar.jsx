@@ -15,6 +15,10 @@ export default function Avatar({ src, name, size = 32, className = '' }) {
         src={src}
         alt={name || 'Avatar'}
         onError={() => setFailed(true)}
+        loading="lazy"
+        decoding="async"
+        width={size}
+        height={size}
         style={{ width: dimension, height: dimension }}
         className={`shrink-0 rounded-full border border-slate-200 object-cover ${className}`}
       />

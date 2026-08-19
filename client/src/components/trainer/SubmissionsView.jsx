@@ -59,7 +59,13 @@ function FilePreview({ files }) {
             <div key={url} className="relative overflow-hidden rounded-md border border-slate-200 hover:border-primary-300">
               <a href={resolveFileUrl(url)} target="_blank" rel="noreferrer" className="block">
                 {isImage ? (
-                  <img src={resolveFileUrl(url)} alt={prettyFileName(url)} className="h-20 w-full object-cover" />
+                  <img
+                    src={resolveFileUrl(url)}
+                    alt={prettyFileName(url)}
+                    loading="lazy"
+                    decoding="async"
+                    className="h-20 w-full object-cover"
+                  />
                 ) : (
                   <div className="flex h-20 flex-col items-center justify-center gap-1 bg-slate-50 text-slate-400">
                     <FileText size={20} />

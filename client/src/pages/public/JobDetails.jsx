@@ -91,7 +91,7 @@ export default function JobDetails() {
                 image yet — never a placeholder/stock photo, just fall back
                 to the same thin navy brand accent Course Details also uses. */}
             {job.image ? (
-              <img src={resolveFileUrl(job.image)} alt="" className="h-56 w-full object-cover sm:h-72" />
+              <img src={resolveFileUrl(job.image)} alt="" decoding="async" className="h-56 w-full object-cover sm:h-72" />
             ) : (
               <div className="h-1.5 bg-(--color-sidebar)" />
             )}

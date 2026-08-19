@@ -1,10 +1,14 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { LogOut, Menu, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { ROLES } from '../../constants/roles';
 
-export default function Header({ onMenuClick }) {
+// Wrapped in memo (see export at bottom) — same reasoning as Sidebar.jsx:
+// SuperAdminLayout re-renders on every route change, and with a stable
+// onMenuClick prop (useCallback there) this now skips re-rendering the
+// header chrome on navigations where nothing it reads actually changed.
+function Header({ onMenuClick }) {
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
@@ -89,3 +93,5 @@ export default function Header({ onMenuClick }) {
     </header>
   );
 }
+
+export default memo(Header);
