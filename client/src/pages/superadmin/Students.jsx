@@ -186,11 +186,19 @@ export default function Students() {
       const created = await studentsApi.create(studentValues);
       if (enrollment?.batch) {
         const batch = batches.find((b) => b._id === enrollment.batch);
+        // Status must be a qualifying (non-'pending') Enrollment status —
+        // see student.controller.js's getQualifyingStudentIds — otherwise
+        // the student this just created would never appear in the Students
+        // list/detail view it's added from. 'pending' here is reserved for
+        // an unreviewed course Registration (see Registration.js), which
+        // this already-admin-created enrollment is not: the form's own
+        // copy promises "Enroll the student in a batch immediately", so
+        // 'enrolled' is the correct immediate status.
         await enrollmentsApi.create(created._id, {
           course: enrollment.course || batch?.course?._id,
           batch: enrollment.batch,
           rollNumber: enrollment.rollNumber,
-          status: 'pending',
+          status: 'enrolled',
         });
       }
     }
